@@ -1,0 +1,55 @@
+generator client {
+  provider        = "prisma-client-js"
+  // On Vercel (serverless), use the Node.js runtime for Prisma Client
+  // to avoid edge-runtime compatibility issues.
+  // The default "library" engine works correctly in Vercel Functions.
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Match {
+  id        String   @id @default(cuid())
+  round     Int
+  matchNum  Int
+  homeTeam  String
+  awayTeam  String
+  homeName  String
+  awayName  String
+  bets      Bet[]
+  createdAt DateTime @default(now())
+
+  @@index([round])
+  @@index([round, matchNum])
+}
+
+model Player {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  token     String   @unique
+  bets      Bet[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([token])
+  @@index([name])
+}
+
+model Bet {
+  id         String   @id @default(cuid())
+  playerId   String
+  matchId    String
+  homeScore  Int?
+  awayScore  Int?
+  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  match      Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([playerId, matchId])
+  @@index([playerId])
+  @@index([matchId])
+}
