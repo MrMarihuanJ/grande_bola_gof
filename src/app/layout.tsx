@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Bolão Copa do Mundo 2026 — Palpites",
-  description: "Faça seus palpites para os jogos da Copa do Mundo 2026. Bolão online com link individual e privacidade (talvez) garantida.",
+  description: "Faça seus palpites para os jogos da Copa do Mundo 2026. Bolão online com link individual e privacidade garantida.",
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
