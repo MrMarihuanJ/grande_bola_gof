@@ -77,4 +77,3 @@ export const MATCHES = [
   { round: 3, matchNum: 23, homeTeam: 'AGL', awayTeam: 'AUT', homeName: 'Angola', awayName: 'Áustria' },
   { round: 3, matchNum: 24, homeTeam: 'JOR', awayTeam: 'ARG', homeName: 'Jordânia', awayName: 'Argentina' },
 ];
-
