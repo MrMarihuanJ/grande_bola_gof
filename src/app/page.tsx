@@ -479,6 +479,48 @@ function HomeContent() {
     window.open(`/api/admin/export?password=${encodeURIComponent(adminPassword)}`, '_blank');
   };
 
+  // Reordenar partidas sem perder palpites
+  const [reorderLoading, setReorderLoading] = useState(false);
+  const handleReorder = async () => {
+    if (!confirm('Confirma a reordenacao das partidas conforme o seed-data.ts atual? Os palpites serao preservados.')) {
+      return;
+    }
+    setReorderLoading(true);
+    try {
+      const res = await fetch(`/api/admin/reorder-matches?password=${encodeURIComponent(adminPassword)}`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast({
+          title: 'Reordenacao concluida!',
+          description: `${data.summary.partidas_atualizadas} partidas atualizadas. ${data.summary.palpites_preservados} palpites preservados.`,
+        });
+        await reloadAdminData();
+      } else if (res.status === 401) {
+        toast({
+          title: 'Senha incorreta',
+          description: 'A senha de administrador esta incorreta.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Erro na reordenacao',
+          description: data.detail || data.error || 'Erro desconhecido',
+          variant: 'destructive',
+        });
+      }
+    } catch (e) {
+      toast({
+        title: 'Erro de conexao',
+        description: 'Tente novamente mais tarde.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReorderLoading(false);
+    }
+  };
+
   // Toggle round expansion
   const toggleRound = (round: number) => {
     setExpandedRounds(prev => {
@@ -837,6 +879,16 @@ function HomeContent() {
             </div>
             {isAdminAuth && (
               <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  onClick={handleReorder}
+                  disabled={reorderLoading}
+                  className="bg-white/10 border-white/30 text-white hover:bg-white/20"
+                  title="Atualiza a ordem das partidas conforme seed-data.ts, preservando palpites"
+                >
+                  {reorderLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <AlertTriangle className="h-4 w-4 mr-2" />}
+                  Reordenar Jogos
+                </Button>
                 <Button
                   variant="outline"
                   onClick={handleExport}
