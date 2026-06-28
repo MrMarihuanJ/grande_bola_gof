@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
-import { db, runAutoMigration } from '@/lib/db';
+import { db } from '@/lib/db';
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'copa2026admin';
 
 export async function DELETE(request: Request) {
   try {
-    await runAutoMigration();
     const { searchParams } = new URL(request.url);
     const password = searchParams.get('password');
     const playerId = searchParams.get('playerId');
