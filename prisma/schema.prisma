@@ -56,7 +56,7 @@ model Bet {
 
 model PhaseWinner {
   id         String   @id @default(cuid())
-  phase      String   @unique  // "segunda_fase", "oitavas", "quartas", "semifinal", "terceiro_lugar", "final"
+  phase      String   @unique  // "groups", "segunda_fase", "oitavas", "quartas", "semifinal", "terceiro_lugar", "final", "segundo_lugar", "terceiro_lugar_geral"
   winnerName String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

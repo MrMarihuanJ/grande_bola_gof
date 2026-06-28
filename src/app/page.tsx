@@ -25,7 +25,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Trophy, Save, Check, Users, Shield, Download, Info, Loader2, ChevronDown, ChevronUp, Trash2, Clock, AlertTriangle, Star, PartyPopper, Settings, Award } from 'lucide-react';
+import { Trophy, Save, Check, Users, Shield, Download, Info, Loader2, ChevronDown, ChevronUp, Trash2, Clock, AlertTriangle, Star, PartyPopper, Settings, Award, Medal } from 'lucide-react';
 
 interface Match {
   id: string;
@@ -57,18 +57,31 @@ interface PhaseWinnerData {
   winnerName: string;
 }
 
-// Phase configuration constants
+// Phase configuration constants — CORRECTED match counts
 const PHASES = [
   { key: 'groups', label: '1ª Fase', matchCount: 72, order: 0 },
-  { key: 'segunda_fase', label: '2ª Fase', matchSlots: 16, matchCount: 8, order: 1 },
-  { key: 'oitavas', label: 'Oitavas', matchSlots: 8, matchCount: 4, order: 2 },
-  { key: 'quartas', label: 'Quartas', matchSlots: 4, matchCount: 2, order: 3 },
-  { key: 'semifinal', label: 'Semifinal', matchSlots: 2, matchCount: 1, order: 4 },
+  { key: 'segunda_fase', label: '2ª Fase', matchSlots: 32, matchCount: 16, order: 1 },
+  { key: 'oitavas', label: 'Oitavas de Final', matchSlots: 16, matchCount: 8, order: 2 },
+  { key: 'quartas', label: 'Quartas de Final', matchSlots: 8, matchCount: 4, order: 3 },
+  { key: 'semifinal', label: 'Semifinal', matchSlots: 4, matchCount: 2, order: 4 },
   { key: 'terceiro_lugar', label: '3º Lugar', matchSlots: 2, matchCount: 1, order: 5 },
   { key: 'final', label: 'Final', matchSlots: 2, matchCount: 1, order: 6 },
 ];
 
 const KNOCKOUT_PHASES = PHASES.filter(p => p.key !== 'groups');
+
+// Winner categories — includes group phase + 2nd/3rd place overall
+const WINNER_CATEGORIES = [
+  { key: 'groups', label: '1ª Fase (Grupos)' },
+  { key: 'segunda_fase', label: '2ª Fase' },
+  { key: 'oitavas', label: 'Oitavas de Final' },
+  { key: 'quartas', label: 'Quartas de Final' },
+  { key: 'semifinal', label: 'Semifinal' },
+  { key: 'terceiro_lugar', label: '3º Lugar' },
+  { key: 'final', label: 'Final' },
+  { key: 'segundo_lugar', label: '2º Lugar (Vice-campeão)' },
+  { key: 'terceiro_lugar_geral', label: '3º Lugar Geral' },
+];
 
 const ROUND_LABELS: Record<number, string> = {
   1: '1ª Rodada',
@@ -76,7 +89,7 @@ const ROUND_LABELS: Record<number, string> = {
   3: '3ª Rodada',
 };
 
-// Teams for admin team selector
+// Teams for admin team selector — CORRECTED: removed SAL/SEM, fixed CDM
 const TEAMS = [
   { abbr: 'MEX', name: 'México' },
   { abbr: 'AFS', name: 'África do Sul' },
@@ -96,7 +109,7 @@ const TEAMS = [
   { abbr: 'TUR', name: 'Turquia' },
   { abbr: 'ALE', name: 'Alemanha' },
   { abbr: 'CUR', name: 'Curaçao' },
-  { abbr: 'CDM', name: 'Comores' },
+  { abbr: 'CDM', name: 'Costa do Marfim' },
   { abbr: 'EQU', name: 'Equador' },
   { abbr: 'HOL', name: 'Holanda' },
   { abbr: 'JAP', name: 'Japão' },
@@ -126,8 +139,6 @@ const TEAMS = [
   { abbr: 'CRO', name: 'Croácia' },
   { abbr: 'GAN', name: 'Gana' },
   { abbr: 'PAN', name: 'Panamá' },
-  { abbr: 'SAL', name: 'El Salvador' },
-  { abbr: 'SEM', name: 'São Tomé e Príncipe' },
 ];
 
 // Audio playback helper
@@ -154,8 +165,7 @@ function getTeamColor(abbr: string): string {
     NZE: '#000000', PAN: '#005293', PAR: '#D52B1E', CHI: '#D52B1E',
     ECU: '#FFD100', CUR: '#002B7F', CAB: '#003893', HAI: '#00209F',
     BOS: '#002F6C', AGL: '#CC0000', JOR: '#000000', RDC: '#007FFF',
-    CDM: '#002F6C', SAL: '#0F47AF', SEM: '#009739', AFS: '#007749',
-    ESC: '#003087',
+    CDM: '#F77F00', AFS: '#007749', ESC: '#003087',
   };
   return colors[abbr] || '#6B7280';
 }
@@ -194,6 +204,9 @@ function HomeContent() {
   const [winnerModal, setWinnerModal] = useState<{ phase: string; winnerName: string | null } | null>(null);
   const [phaseLoading, setPhaseLoading] = useState(false);
 
+  // Betting page sub-tab: 'bets' or 'winners'
+  const [betSubTab, setBetSubTab] = useState<'bets' | 'winners'>('bets');
+
   // Admin tabs state
   const [adminTab, setAdminTab] = useState<'bets' | 'phases' | 'winners'>('bets');
   const [adminPhaseConfig, setAdminPhaseConfig] = useState<string>('segunda_fase');
@@ -210,21 +223,28 @@ function HomeContent() {
 
   // Read URL params - compute initial page
   const adminParam = searchParams.get('admin');
-  // Use a ref to track the initial page from URL to avoid setState in effect
   const [currentPage, setCurrentPage] = useState<'home' | 'bet' | 'admin'>(
     adminParam !== null ? 'admin' : 'home'
   );
 
-  // Fetch matches (group stage)
+  // Fetch ALL matches on initial load (including knockout phases)
   useEffect(() => {
-    const fetchMatches = async () => {
+    const fetchAllMatches = async () => {
       try {
-        const res = await fetch('/api/matches');
+        const res = await fetch('/api/matches?all=true');
         if (res.ok) {
-          const data = await res.json();
-          setMatches(data);
-          // Store group matches in phase map
-          setPhaseMatches(prev => new Map(prev).set('groups', data));
+          const data: Match[] = await res.json();
+          // Organize matches by phase
+          const byPhase = new Map<string, Match[]>();
+          data.forEach((match) => {
+            const existing = byPhase.get(match.phase) || [];
+            existing.push(match);
+            byPhase.set(match.phase, existing);
+          });
+          // Set group matches
+          const groupMatches = byPhase.get('groups') || [];
+          setMatches(groupMatches);
+          setPhaseMatches(byPhase);
           setNeedsSetup(false);
         } else {
           setNeedsSetup(true);
@@ -236,7 +256,7 @@ function HomeContent() {
         setInitialLoading(false);
       }
     };
-    fetchMatches();
+    fetchAllMatches();
   }, []);
 
   // Fetch phase winners
@@ -292,9 +312,9 @@ function HomeContent() {
     fetchPlayerData();
   }, [currentPage, player]);
 
-  // Fetch phase matches when tab switches
+  // Fetch phase matches when tab switches (lazy load for knockout phases)
   const fetchPhaseMatches = useCallback(async (phase: string) => {
-    if (phaseMatches.has(phase)) return; // already loaded
+    if (phaseMatches.has(phase) && (phaseMatches.get(phase)?.length || 0) > 0) return;
 
     setPhaseLoading(true);
     try {
@@ -310,19 +330,13 @@ function HomeContent() {
     }
   }, [phaseMatches]);
 
-  // Handle phase tab click
+  // Handle phase tab click — always allow clicking, fetch if needed
   const handlePhaseTabClick = (phaseKey: string) => {
     setActivePhase(phaseKey);
     if (phaseKey !== 'groups') {
       fetchPhaseMatches(phaseKey);
     }
   };
-
-  // Get phases that have matches
-  const availablePhases = PHASES.filter(p => {
-    if (p.key === 'groups') return true;
-    return phaseMatches.has(p.key) && (phaseMatches.get(p.key)?.length || 0) > 0;
-  });
 
   // Register new player
   const handleSetup = async () => {
@@ -548,7 +562,6 @@ function HomeContent() {
         setAdminData(data);
         setIsAdminAuth(true);
         setCurrentPage('admin');
-        // Load admin phase winners
         loadAdminPhaseWinners();
       } else if (res.status === 401) {
         toast({
@@ -797,12 +810,22 @@ function HomeContent() {
           title: 'Fase configurada!',
           description: data.message,
         });
-        // Refresh phase matches
+        // Refresh phase matches — delete cached and re-fetch
         setPhaseMatches(prev => {
           const newMap = new Map(prev);
-          newMap.delete(adminPhaseConfig); // force reload next time
+          newMap.delete(adminPhaseConfig);
           return newMap;
         });
+        // Also immediately fetch the updated matches
+        try {
+          const fetchRes = await fetch(`/api/matches?phase=${adminPhaseConfig}`);
+          if (fetchRes.ok) {
+            const fetchData = await fetchRes.json();
+            setPhaseMatches(prev => new Map(prev).set(adminPhaseConfig, fetchData));
+          }
+        } catch (e) {
+          console.error('Failed to refresh phase matches after save:', e);
+        }
       } else if (res.status === 401) {
         toast({
           title: 'Senha incorreta',
@@ -1149,136 +1172,212 @@ function HomeContent() {
           </div>
         </header>
 
-        {/* Phase tabs */}
-        <div className="bg-emerald-800/90 sticky top-[104px] z-10 shadow-md">
-          <div className="max-w-4xl mx-auto">
-            <div className="flex overflow-x-auto scrollbar-hide gap-1 px-2 py-2">
-              {PHASES.map(phase => {
-                const hasMatches = phase.key === 'groups' || (phaseMatches.has(phase.key) && (phaseMatches.get(phase.key)?.length || 0) > 0);
-                const isActive = activePhase === phase.key;
-                return (
-                  <button
-                    key={phase.key}
-                    onClick={() => hasMatches && handlePhaseTabClick(phase.key)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                      isActive
-                        ? 'bg-yellow-400 text-emerald-900 shadow-md'
-                        : hasMatches
-                          ? 'bg-emerald-700/50 text-green-100 hover:bg-emerald-600/50'
-                          : 'bg-emerald-900/30 text-green-300/40 cursor-not-allowed'
-                    }`}
-                  >
-                    {phase.label}
-                  </button>
-                );
-              })}
-            </div>
+        {/* Sub-tabs: Palpites / Ganhadores */}
+        <div className="bg-emerald-900 sticky top-[104px] z-10 shadow-md">
+          <div className="max-w-4xl mx-auto flex">
+            <button
+              onClick={() => setBetSubTab('bets')}
+              className={`flex-1 px-4 py-2.5 text-sm font-semibold text-center transition-colors ${
+                betSubTab === 'bets'
+                  ? 'bg-yellow-400 text-emerald-900'
+                  : 'text-green-200 hover:bg-emerald-800/50'
+              }`}
+            >
+              <Save className="h-4 w-4 inline mr-1" />
+              Palpites
+            </button>
+            <button
+              onClick={() => setBetSubTab('winners')}
+              className={`flex-1 px-4 py-2.5 text-sm font-semibold text-center transition-colors ${
+                betSubTab === 'winners'
+                  ? 'bg-yellow-400 text-emerald-900'
+                  : 'text-green-200 hover:bg-emerald-800/50'
+              }`}
+            >
+              <Award className="h-4 w-4 inline mr-1" />
+              Ganhadores
+            </button>
           </div>
         </div>
 
         <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6 space-y-4">
-          {/* Instructions card */}
-          <Card className="border-blue-200 bg-blue-50/50">
-            <CardContent className="py-3">
-              <p className="text-sm text-blue-800">
-                <strong>Instruções:</strong> Preencha o placar de cada jogo com números inteiros (0 a 30).
-                Clique em <strong>&quot;Salvar Palpites&quot;</strong> ao final da página quando terminar.
-                Você pode salvar quantas vezes quiser — os palpites anteriores serão substituídos.
-              </p>
-            </CardContent>
-          </Card>
 
-          {/* Phase content */}
-          {activePhase === 'groups' ? (
-            // Group stage: rounds with collapsible sections
-            <>
-              {[1, 2, 3].map(round => {
-                const roundMatches = matchesByRound[round] || [];
-                const isExpanded = expandedRounds.has(round);
-                const roundFilled = roundMatches.filter(m => {
-                  const bet = bets.get(m.id);
-                  return bet && (bet.homeScore !== '' || bet.awayScore !== '');
-                }).length;
-
+          {/* === WINNERS TAB === */}
+          {betSubTab === 'winners' && (
+            <div className="space-y-3">
+              {WINNER_CATEGORIES.map(cat => {
+                const winner = phaseWinners.get(cat.key);
                 return (
-                  <Card key={round} className="overflow-hidden">
-                    <button
-                      onClick={() => toggleRound(round)}
-                      className="w-full text-left bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-4 flex items-center justify-between hover:from-emerald-700 hover:to-green-700 transition-colors"
+                  <Card key={cat.key} className="overflow-hidden">
+                    <div
+                      className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                      onClick={() => handleViewWinner(cat.key)}
                     >
                       <div className="flex items-center gap-3">
-                        <Badge variant="secondary" className="bg-yellow-300 text-emerald-900 font-bold">
-                          {ROUND_LABELS[round]}
-                        </Badge>
-                        <span className="text-sm text-green-100">
-                          {roundFilled}/{roundMatches.length} palpites
-                        </span>
+                        {cat.key === 'segundo_lugar' ? (
+                          <Medal className="h-5 w-5 text-gray-400" />
+                        ) : cat.key === 'terceiro_lugar_geral' ? (
+                          <Medal className="h-5 w-5 text-amber-600" />
+                        ) : (
+                          <Trophy className="h-5 w-5 text-yellow-500" />
+                        )}
+                        <div>
+                          <p className="font-semibold text-sm text-gray-800">{cat.label}</p>
+                          {winner ? (
+                            <p className="text-xs text-emerald-600 font-medium">{winner}</p>
+                          ) : (
+                            <p className="text-xs text-gray-400">Ainda não definido</p>
+                          )}
+                        </div>
                       </div>
-                      {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-                    </button>
-                    {isExpanded && (
-                      <CardContent className="p-0 divide-y divide-gray-100">
-                        {roundMatches.map(match => renderMatchRow(match))}
-                      </CardContent>
-                    )}
+                      <div className="flex items-center gap-2">
+                        {winner && <span className="text-lg">🏆</span>}
+                        <Badge variant={winner ? 'default' : 'secondary'} className={winner ? 'bg-emerald-600' : ''}>
+                          {winner ? 'Ver' : '???'}
+                        </Badge>
+                      </div>
+                    </div>
                   </Card>
                 );
               })}
-            </>
-          ) : (
-            // Knockout phase: flat match list
-            <>
-              {phaseLoading ? (
-                <div className="flex justify-center py-12">
-                  <Loader2 className="h-8 w-8 animate-spin text-green-600" />
-                </div>
-              ) : currentPhaseMatches.length === 0 ? (
-                <Card className="border-gray-200">
-                  <CardContent className="py-8 text-center text-gray-500">
-                    Nenhum jogo configurado para esta fase ainda.
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card className="overflow-hidden">
-                  <div className="bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-4">
-                    <Badge variant="secondary" className="bg-yellow-300 text-emerald-900 font-bold">
-                      {PHASES.find(p => p.key === activePhase)?.label || activePhase}
-                    </Badge>
-                  </div>
-                  <CardContent className="p-0 divide-y divide-gray-100">
-                    {currentPhaseMatches.map(match => renderMatchRow(match))}
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Ver Ganhador button for knockout phases */}
-              <Button
-                onClick={() => handleViewWinner(activePhase)}
-                variant="outline"
-                className="w-full h-12 text-base font-bold border-yellow-400 text-yellow-700 hover:bg-yellow-50 bg-yellow-50/50"
-              >
-                <Star className="h-5 w-5 mr-2" />
-                Ver Ganhador
-              </Button>
-            </>
+            </div>
           )}
 
-          {/* Save button */}
-          <div className="sticky bottom-4 z-10">
-            <Button
-              onClick={handleSave}
-              disabled={loading}
-              className="w-full h-14 text-lg font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl rounded-xl"
-            >
-              {loading ? (
-                <Loader2 className="h-5 w-5 animate-spin mr-2" />
+          {/* === BETS TAB === */}
+          {betSubTab === 'bets' && (
+            <>
+              {/* Phase tabs */}
+              <div className="bg-emerald-800/90 rounded-lg shadow-md p-2">
+                <div className="flex overflow-x-auto scrollbar-hide gap-1">
+                  {PHASES.map(phase => {
+                    const hasMatches = phase.key === 'groups' || (phaseMatches.has(phase.key) && (phaseMatches.get(phase.key)?.length || 0) > 0);
+                    const isActive = activePhase === phase.key;
+                    return (
+                      <button
+                        key={phase.key}
+                        onClick={() => handlePhaseTabClick(phase.key)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                          isActive
+                            ? 'bg-yellow-400 text-emerald-900 shadow-md'
+                            : hasMatches
+                              ? 'bg-emerald-700/50 text-green-100 hover:bg-emerald-600/50'
+                              : 'bg-emerald-900/30 text-green-300/40 hover:bg-emerald-800/30 hover:text-green-200/60'
+                        }`}
+                      >
+                        {phase.label}
+                        {hasMatches && phase.key !== 'groups' && (
+                          <span className="ml-1 text-xs opacity-70">({(phaseMatches.get(phase.key)?.length || 0)})</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Instructions card */}
+              <Card className="border-blue-200 bg-blue-50/50">
+                <CardContent className="py-3">
+                  <p className="text-sm text-blue-800">
+                    <strong>Instruções:</strong> Preencha o placar de cada jogo com números inteiros (0 a 30).
+                    Clique em <strong>&quot;Salvar Palpites&quot;</strong> ao final da página quando terminar.
+                    Você pode salvar quantas vezes quiser — os palpites anteriores serão substituídos.
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Phase content */}
+              {activePhase === 'groups' ? (
+                // Group stage: rounds with collapsible sections
+                <>
+                  {[1, 2, 3].map(round => {
+                    const roundMatches = matchesByRound[round] || [];
+                    const isExpanded = expandedRounds.has(round);
+                    const roundFilled = roundMatches.filter(m => {
+                      const bet = bets.get(m.id);
+                      return bet && (bet.homeScore !== '' || bet.awayScore !== '');
+                    }).length;
+
+                    return (
+                      <Card key={round} className="overflow-hidden">
+                        <button
+                          onClick={() => toggleRound(round)}
+                          className="w-full text-left bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-4 flex items-center justify-between hover:from-emerald-700 hover:to-green-700 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            <Badge variant="secondary" className="bg-yellow-300 text-emerald-900 font-bold">
+                              {ROUND_LABELS[round]}
+                            </Badge>
+                            <span className="text-sm text-green-100">
+                              {roundFilled}/{roundMatches.length} palpites
+                            </span>
+                          </div>
+                          {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                        </button>
+                        {isExpanded && (
+                          <CardContent className="p-0 divide-y divide-gray-100">
+                            {roundMatches.map(match => renderMatchRow(match))}
+                          </CardContent>
+                        )}
+                      </Card>
+                    );
+                  })}
+                </>
               ) : (
-                <Save className="h-5 w-5 mr-2" />
+                // Knockout phase: flat match list
+                <>
+                  {phaseLoading ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+                    </div>
+                  ) : currentPhaseMatches.length === 0 ? (
+                    <Card className="border-gray-200">
+                      <CardContent className="py-8 text-center text-gray-500">
+                        Nenhum jogo configurado para esta fase ainda. Aguarde o administrador configurar os confrontos.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <Card className="overflow-hidden">
+                      <div className="bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-4">
+                        <Badge variant="secondary" className="bg-yellow-300 text-emerald-900 font-bold">
+                          {PHASES.find(p => p.key === activePhase)?.label || activePhase}
+                        </Badge>
+                      </div>
+                      <CardContent className="p-0 divide-y divide-gray-100">
+                        {currentPhaseMatches.map(match => renderMatchRow(match))}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Ver Ganhador button for knockout phases */}
+                  <Button
+                    onClick={() => handleViewWinner(activePhase)}
+                    variant="outline"
+                    className="w-full h-12 text-base font-bold border-yellow-400 text-yellow-700 hover:bg-yellow-50 bg-yellow-50/50"
+                  >
+                    <Star className="h-5 w-5 mr-2" />
+                    Ver Ganhador
+                  </Button>
+                </>
               )}
-              Salvar Palpites
-              {hasChanges && <span className="ml-2 text-yellow-200">●</span>}
-            </Button>
-          </div>
+
+              {/* Save button */}
+              <div className="sticky bottom-4 z-10">
+                <Button
+                  onClick={handleSave}
+                  disabled={loading}
+                  className="w-full h-14 text-lg font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl rounded-xl"
+                >
+                  {loading ? (
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  ) : (
+                    <Save className="h-5 w-5 mr-2" />
+                  )}
+                  Salvar Palpites
+                  {hasChanges && <span className="ml-2 text-yellow-200">●</span>}
+                </Button>
+              </div>
+            </>
+          )}
         </main>
 
         {/* Winner modal */}
@@ -1289,7 +1388,7 @@ function HomeContent() {
                 {winnerModal?.winnerName ? (
                   <>
                     <PartyPopper className="h-6 w-6 text-yellow-500" />
-                    Ganhador da {PHASES.find(p => p.key === winnerModal?.phase)?.label || winnerModal?.phase}!
+                    Ganhador da {WINNER_CATEGORIES.find(c => c.key === winnerModal?.phase)?.label || PHASES.find(p => p.key === winnerModal?.phase)?.label || winnerModal?.phase}!
                     <PartyPopper className="h-6 w-6 text-yellow-500" />
                   </>
                 ) : (
@@ -1548,7 +1647,7 @@ function HomeContent() {
                                       {lastUpdated && (
                                         <p className="flex items-center gap-1">
                                           <Clock className="h-3.5 w-3.5" />
-                                          Último palpite: {lastUpdated.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                          Último palpite: {lastUpdated.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                                         </p>
                                       )}
                                       <p>{betCount} palpites</p>
@@ -1630,7 +1729,7 @@ function HomeContent() {
                     >
                       {KNOCKOUT_PHASES.map(phase => (
                         <option key={phase.key} value={phase.key}>
-                          {phase.label} ({phase.matchCount} jogos)
+                          {phase.label} ({phase.matchCount} jogos, {phase.matchSlots} times)
                         </option>
                       ))}
                     </select>
@@ -1701,20 +1800,20 @@ function HomeContent() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Award className="h-5 w-5" />
-                    Ganhadores das Fases
+                    Ganhadores
                   </CardTitle>
                   <CardDescription>
-                    Defina o nome do ganhador de cada fase eliminatória
+                    Defina o ganhador de cada fase, além do 2º e 3º lugar geral
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {KNOCKOUT_PHASES.map(phase => (
-                    <div key={phase.key} className="flex items-center gap-3">
-                      <Label className="w-40 shrink-0 text-sm font-medium">{phase.label}</Label>
+                  {WINNER_CATEGORIES.map(cat => (
+                    <div key={cat.key} className="flex items-center gap-3">
+                      <Label className="w-48 shrink-0 text-sm font-medium">{cat.label}</Label>
                       <Input
                         placeholder="Nome do ganhador"
-                        value={adminPhaseWinners.get(phase.key) || ''}
-                        onChange={(e) => setAdminPhaseWinners(prev => new Map(prev).set(phase.key, e.target.value))}
+                        value={adminPhaseWinners.get(cat.key) || ''}
+                        onChange={(e) => setAdminPhaseWinners(prev => new Map(prev).set(cat.key, e.target.value))}
                         className="flex-1"
                       />
                     </div>
