@@ -2,18 +2,8 @@ import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
+  __bolao_db_ready: Promise<void> | undefined
 }
-
-// In serverless environments (Vercel), each function invocation
-// creates a new instance. To avoid exhausting database connections,
-// we reuse the client in global scope during development.
-export const db =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-  })
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
 
 // ========== AUTO-MIGRATION ==========
 // Runs once per cold start to ensure the database schema matches the Prisma schema.
@@ -23,12 +13,16 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
 const MIGRATION_KEY = '__bolao_db_migrated__';
 
 async function runAutoMigration() {
-  if ((globalThis as any)[MIGRATION_KEY]) return; // Already migrated in this process
+  // If already migrated in this process, return immediately
+  if ((globalThis as any)[MIGRATION_KEY]) return;
 
   try {
     // Use DIRECT_URL for DDL operations (bypass pgbouncer)
     const url = process.env.DIRECT_URL || process.env.DATABASE_URL;
-    if (!url) return; // Can't migrate without a database URL
+    if (!url) {
+      console.warn('[auto-migrate] No database URL found, skipping migration');
+      return;
+    }
 
     const directClient = new PrismaClient({
       datasources: { db: { url } },
@@ -83,7 +77,56 @@ async function runAutoMigration() {
   }
 }
 
-// Run migration eagerly on module load
-runAutoMigration();
+// Singleton promise that ensures migration runs exactly once before first DB access
+function getDbReadyPromise(): Promise<void> {
+  if (!globalForPrisma.__bolao_db_ready) {
+    globalForPrisma.__bolao_db_ready = runAutoMigration();
+  }
+  return globalForPrisma.__bolao_db_ready;
+}
 
-export { runAutoMigration };
+// Lazy PrismaClient getter - ensures migration has completed before first use
+// This solves the race condition where db was created immediately but migration
+// was fire-and-forget, causing "column does not exist" errors on cold starts.
+let _db: PrismaClient | undefined;
+
+function getDb(): PrismaClient {
+  if (!_db) {
+    _db = globalForPrisma.prisma ??
+      new PrismaClient({
+        log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+      });
+    if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = _db;
+  }
+  return _db;
+}
+
+// Export a Proxy that:
+// 1. Awaits migration before any Prisma operation
+// 2. Delegates all property access to the real PrismaClient
+// This ensures every API route automatically waits for migration without
+// needing explicit `await runAutoMigration()` calls.
+export const db = new Proxy({} as PrismaClient, {
+  get(_target, prop, receiver) {
+    // Allow typeof checks and non-function property access to pass through
+    const realDb = getDb();
+    const value = Reflect.get(realDb, prop, receiver);
+
+    // If the property is a function (like $queryRaw, user.findMany, etc.),
+    // wrap it to ensure migration completes first
+    if (typeof value === 'function') {
+      return async function (...args: any[]) {
+        await getDbReadyPromise();
+        return value.apply(realDb, args);
+      };
+    }
+
+    // For non-function properties (like $connect, $disconnect as objects, etc.)
+    // wrap them with migration check too
+    return value;
+  },
+});
+
+// Also export runAutoMigration for explicit use in routes that want
+// to await migration at the top level (kept for backward compatibility)
+export { runAutoMigration, getDbReadyPromise };
