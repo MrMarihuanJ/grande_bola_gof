@@ -1,8 +1,5 @@
 generator client {
   provider        = "prisma-client-js"
-  // On Vercel (serverless), use the Node.js runtime for Prisma Client
-  // to avoid edge-runtime compatibility issues.
-  // The default "library" engine works correctly in Vercel Functions.
 }
 
 datasource db {
@@ -13,8 +10,9 @@ datasource db {
 
 model Match {
   id        String   @id @default(cuid())
-  round     Int
-  matchNum  Int
+  round     Int?              // Para fase de grupos: 1-3. Para eliminatórias: null
+  matchNum  Int               // Número do jogo dentro da rodada/fase
+  phase     String   @default("groups")  // "groups", "segunda_fase", "oitavas", "quartas", "semifinal", "terceiro_lugar", "final"
   homeTeam  String
   awayTeam  String
   homeName  String
@@ -24,6 +22,8 @@ model Match {
 
   @@index([round])
   @@index([round, matchNum])
+  @@index([phase])
+  @@index([phase, matchNum])
 }
 
 model Player {
@@ -52,4 +52,12 @@ model Bet {
   @@unique([playerId, matchId])
   @@index([playerId])
   @@index([matchId])
+}
+
+model PhaseWinner {
+  id         String   @id @default(cuid())
+  phase      String   @unique  // "segunda_fase", "oitavas", "quartas", "semifinal", "terceiro_lugar", "final"
+  winnerName String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

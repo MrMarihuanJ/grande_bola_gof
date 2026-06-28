@@ -40,8 +40,9 @@ async function runSetup(password: string) {
     await directClient.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Match" (
         "id" TEXT NOT NULL,
-        "round" INTEGER NOT NULL,
+        "round" INTEGER,
         "matchNum" INTEGER NOT NULL,
+        "phase" TEXT NOT NULL DEFAULT 'groups',
         "homeTeam" TEXT NOT NULL,
         "awayTeam" TEXT NOT NULL,
         "homeName" TEXT NOT NULL,
@@ -52,9 +53,31 @@ async function runSetup(password: string) {
     `);
     results.push('Tabela Match criada/verificada');
 
+    // Add phase column if not exists (for existing databases)
+    try {
+      await directClient.$executeRawUnsafe(`ALTER TABLE "Match" ADD COLUMN IF NOT EXISTS "phase" TEXT NOT NULL DEFAULT 'groups';`);
+      results.push('Coluna phase adicionada/verificada na tabela Match');
+    } catch (e: any) {
+      if (e.message?.includes('already exists') || e.message?.includes('duplicate')) {
+        results.push('Coluna phase já existe na tabela Match');
+      } else {
+        results.push('Coluna phase: ' + e.message);
+      }
+    }
+
+    // Make round nullable (for knockout matches)
+    try {
+      await directClient.$executeRawUnsafe(`ALTER TABLE "Match" ALTER COLUMN "round" DROP NOT NULL;`);
+      results.push('Coluna round alterada para nullable');
+    } catch (e: any) {
+      results.push('Coluna round nullable: ' + (e.message?.includes('already') ? 'ja ok' : e.message));
+    }
+
     // 2. Criar índices da tabela Match
     await directClient.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Match_round_idx" ON "Match"("round");`);
     await directClient.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Match_round_matchNum_idx" ON "Match"("round", "matchNum");`);
+    await directClient.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Match_phase_idx" ON "Match"("phase");`);
+    await directClient.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Match_phase_matchNum_idx" ON "Match"("phase", "matchNum");`);
     results.push('Indices da tabela Match criados/verificados');
 
     // 3. Criar tabela Player
@@ -120,17 +143,42 @@ async function runSetup(password: string) {
       results.push('Foreign key Bet_matchId_fkey: ' + (e.message?.includes('already exists') ? 'ja existe' : e.message));
     }
 
-    // 8. Popular tabela Match se vazia
+    // 8. Criar tabela PhaseWinner
+    await directClient.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "PhaseWinner" (
+        "id" TEXT NOT NULL,
+        "phase" TEXT NOT NULL,
+        "winnerName" TEXT NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT "PhaseWinner_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    results.push('Tabela PhaseWinner criada/verificada');
+
+    // Índices da tabela PhaseWinner
+    await directClient.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "PhaseWinner_phase_key" ON "PhaseWinner"("phase");`);
+    results.push('Indices da tabela PhaseWinner criados/verificados');
+
+    // 9. Popular tabela Match se vazia (só fase de grupos)
     const matchCount = await directClient.match.count();
     if (matchCount === 0) {
       const { MATCHES } = await import('@/lib/seed-data');
       await directClient.match.createMany({ data: MATCHES });
       results.push(`${MATCHES.length} jogos da Copa do Mundo 2026 inseridos`);
     } else {
-      results.push(`Jogos ja existem (${matchCount} registros)`);
+      // Update existing matches to have phase='groups' if null
+      try {
+        const updateResult = await directClient.$executeRawUnsafe(`
+          UPDATE "Match" SET "phase" = 'groups' WHERE "phase" IS NULL OR "phase" = '';
+        `);
+        results.push(`Jogos ja existem (${matchCount} registros). Phase atualizada.`);
+      } catch (e: any) {
+        results.push(`Jogos ja existem (${matchCount} registros)`);
+      }
     }
 
-    // 9. Verificação final
+    // 10. Verificação final
     const finalMatchCount = await directClient.match.count();
     const finalPlayerCount = await directClient.player.count();
     const finalBetCount = await directClient.bet.count();
@@ -159,7 +207,7 @@ async function runSetup(password: string) {
       error: 'Falha ao configurar o banco de dados',
       detail: error.message,
       hint: error.message?.includes('DIRECT_URL')
-        ? 'Defina DIRECT_URL nas variaveis de ambiente da Vercel'
+        ? 'Defina DIRECT_URL nas variáveis de ambiente da Vercel'
         : 'Verifique se DATABASE_URL e DIRECT_URL estao corretas. Acesse /api/health para diagnostico.',
     }, { status: 500 });
   }
