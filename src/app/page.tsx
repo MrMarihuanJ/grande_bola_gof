@@ -25,7 +25,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Trophy, Save, Check, Users, Shield, Download, Info, Loader2, ChevronDown, ChevronUp, Trash2, Clock, AlertTriangle, Star, PartyPopper, Settings, Award, Medal } from 'lucide-react';
+import { Trophy, Save, Check, Users, Shield, Download, Info, Loader2, ChevronDown, ChevronUp, Trash2, Clock, AlertTriangle, Star, PartyPopper, Settings, Award, Medal, X } from 'lucide-react';
 
 interface Match {
   id: string;
@@ -70,8 +70,15 @@ const PHASES = [
 
 const KNOCKOUT_PHASES = PHASES.filter(p => p.key !== 'groups');
 
-// Winner categories — includes group phase + 2nd/3rd place overall
-const WINNER_CATEGORIES = [
+// Winner positions per phase — 1º, 2º, 3º lugar for EACH phase
+const WINNER_POSITIONS = [
+  { suffix: '_1', label: '1º Lugar', emoji: '🥇' },
+  { suffix: '_2', label: '2º Lugar', emoji: '🥈' },
+  { suffix: '_3', label: '3º Lugar', emoji: '🥉' },
+];
+
+// Phases that can have winners (all phases)
+const PHASES_FOR_WINNERS = [
   { key: 'groups', label: '1ª Fase (Grupos)' },
   { key: 'segunda_fase', label: '2ª Fase' },
   { key: 'oitavas', label: 'Oitavas de Final' },
@@ -79,8 +86,6 @@ const WINNER_CATEGORIES = [
   { key: 'semifinal', label: 'Semifinal' },
   { key: 'terceiro_lugar', label: '3º Lugar' },
   { key: 'final', label: 'Final' },
-  { key: 'segundo_lugar', label: '2º Lugar (Vice-campeão)' },
-  { key: 'terceiro_lugar_geral', label: '3º Lugar Geral' },
 ];
 
 const ROUND_LABELS: Record<number, string> = {
@@ -170,6 +175,26 @@ function getTeamColor(abbr: string): string {
   return colors[abbr] || '#6B7280';
 }
 
+// Helper: get the base phase key from a winner key (e.g., "groups_2" → "groups")
+function getBasePhaseKey(winnerKey: string): string {
+  const pos = WINNER_POSITIONS.find(p => winnerKey.endsWith(p.suffix));
+  if (pos) {
+    return winnerKey.slice(0, -pos.suffix.length);
+  }
+  return winnerKey;
+}
+
+// Helper: get the display label for a winner key
+function getWinnerLabel(winnerKey: string): string {
+  const baseKey = getBasePhaseKey(winnerKey);
+  const phaseInfo = PHASES_FOR_WINNERS.find(p => p.key === baseKey);
+  const pos = WINNER_POSITIONS.find(p => winnerKey.endsWith(p.suffix));
+  if (phaseInfo && pos) {
+    return `${phaseInfo.label} — ${pos.label}`;
+  }
+  return winnerKey;
+}
+
 function HomeContent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -221,27 +246,25 @@ function HomeContent() {
   // Reorder state
   const [reorderLoading, setReorderLoading] = useState(false);
 
-  // Read URL params - compute initial page
+  // Read URL params
   const adminParam = searchParams.get('admin');
   const [currentPage, setCurrentPage] = useState<'home' | 'bet' | 'admin'>(
     adminParam !== null ? 'admin' : 'home'
   );
 
-  // Fetch ALL matches on initial load (including knockout phases)
+  // Fetch ALL matches on initial load
   useEffect(() => {
     const fetchAllMatches = async () => {
       try {
         const res = await fetch('/api/matches?all=true');
         if (res.ok) {
           const data: Match[] = await res.json();
-          // Organize matches by phase
           const byPhase = new Map<string, Match[]>();
           data.forEach((match) => {
             const existing = byPhase.get(match.phase) || [];
             existing.push(match);
             byPhase.set(match.phase, existing);
           });
-          // Set group matches
           const groupMatches = byPhase.get('groups') || [];
           setMatches(groupMatches);
           setPhaseMatches(byPhase);
@@ -312,7 +335,7 @@ function HomeContent() {
     fetchPlayerData();
   }, [currentPage, player]);
 
-  // Fetch phase matches when tab switches (lazy load for knockout phases)
+  // Fetch phase matches when tab switches
   const fetchPhaseMatches = useCallback(async (phase: string) => {
     if (phaseMatches.has(phase) && (phaseMatches.get(phase)?.length || 0) > 0) return;
 
@@ -330,7 +353,7 @@ function HomeContent() {
     }
   }, [phaseMatches]);
 
-  // Handle phase tab click — always allow clicking, fetch if needed
+  // Handle phase tab click
   const handlePhaseTabClick = (phaseKey: string) => {
     setActivePhase(phaseKey);
     if (phaseKey !== 'groups') {
@@ -341,11 +364,7 @@ function HomeContent() {
   // Register new player
   const handleSetup = async () => {
     if (!adminPassword.trim()) {
-      toast({
-        title: 'Senha necessária',
-        description: 'Digite a senha de administrador para configurar o banco de dados.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Senha necessária', description: 'Digite a senha de administrador.', variant: 'destructive' });
       return;
     }
     setSetupLoading(true);
@@ -353,31 +372,16 @@ function HomeContent() {
       const res = await fetch(`/api/setup?password=${encodeURIComponent(adminPassword)}`);
       const data = await res.json();
       if (res.ok && data.success) {
-        toast({
-          title: 'Banco configurado!',
-          description: `Tabelas criadas e ${data.counts?.matches || 0} jogos inseridos. A página será recarregada.`,
-        });
+        toast({ title: 'Banco configurado!', description: `Tabelas criadas e ${data.counts?.matches || 0} jogos inseridos.` });
         setNeedsSetup(false);
         setTimeout(() => window.location.reload(), 1500);
       } else if (res.status === 401) {
-        toast({
-          title: 'Senha incorreta',
-          description: 'A senha de administrador está incorreta.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Senha incorreta', variant: 'destructive' });
       } else {
-        toast({
-          title: 'Erro no setup',
-          description: data.detail || data.error || 'Erro desconhecido',
-          variant: 'destructive',
-        });
+        toast({ title: 'Erro no setup', description: data.detail || data.error || 'Erro desconhecido', variant: 'destructive' });
       }
     } catch (e) {
-      toast({
-        title: 'Erro de conexão',
-        description: 'Não foi possível conectar ao servidor.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro de conexão', variant: 'destructive' });
     } finally {
       setSetupLoading(false);
     }
@@ -386,11 +390,7 @@ function HomeContent() {
   // Login ou registro pelo nome
   const handleLogin = async () => {
     if (!playerName.trim() || playerName.trim().length < 2) {
-      toast({
-        title: 'Nome obrigatório',
-        description: 'Digite seu nome com pelo menos 2 caracteres.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Nome obrigatório', description: 'Digite seu nome com pelo menos 2 caracteres.', variant: 'destructive' });
       return;
     }
 
@@ -407,40 +407,25 @@ function HomeContent() {
         setPlayer({ id: data.id, name: data.name, token: data.token });
         setCurrentPage('bet');
         if (data.isNew) {
-          toast({
-            title: 'Bem-vindo ao bolão!',
-            description: `Conta criada com sucesso. Bons palpites, ${data.name}!`,
-          });
+          toast({ title: 'Bem-vindo ao bolão!', description: `Conta criada com sucesso. Bons palpites, ${data.name}!` });
         } else {
-          toast({
-            title: `Bem-vindo de volta, ${data.name}!`,
-            description: 'Seus palpites anteriores foram carregados.',
-          });
+          toast({ title: `Bem-vindo de volta, ${data.name}!`, description: 'Seus palpites anteriores foram carregados.' });
         }
       } else {
         const error = await res.json();
-        toast({
-          title: 'Erro ao entrar',
-          description: error.error || 'Tente novamente.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Erro ao entrar', description: error.error || 'Tente novamente.', variant: 'destructive' });
       }
     } catch (e) {
-      toast({
-        title: 'Erro de conexão',
-        description: 'Verifique sua internet e tente novamente.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro de conexão', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
   };
 
-  // Save bets (works for all phases)
+  // Save bets
   const handleSave = async () => {
     if (!player) return;
 
-    // Get current phase matches
     const currentMatches = activePhase === 'groups' ? matches : (phaseMatches.get(activePhase) || []);
 
     const betList: { matchId: string; homeScore: number | null; awayScore: number | null }[] = [];
@@ -451,19 +436,11 @@ function HomeContent() {
         const as_ = bet.awayScore !== '' ? parseInt(bet.awayScore, 10) : null;
 
         if (hs !== null && (isNaN(hs) || hs < 0 || hs > 30)) {
-          toast({
-            title: 'Placar inválido',
-            description: `O placar de ${match.homeTeam} no jogo ${match.homeTeam} x ${match.awayTeam} deve ser entre 0 e 30.`,
-            variant: 'destructive',
-          });
+          toast({ title: 'Placar inválido', description: `Placar de ${match.homeTeam} deve ser 0-30.`, variant: 'destructive' });
           return;
         }
         if (as_ !== null && (isNaN(as_) || as_ < 0 || as_ > 30)) {
-          toast({
-            title: 'Placar inválido',
-            description: `O placar de ${match.awayTeam} no jogo ${match.homeTeam} x ${match.awayTeam} deve ser entre 0 e 30.`,
-            variant: 'destructive',
-          });
+          toast({ title: 'Placar inválido', description: `Placar de ${match.awayTeam} deve ser 0-30.`, variant: 'destructive' });
           return;
         }
 
@@ -472,11 +449,7 @@ function HomeContent() {
     });
 
     if (betList.length === 0) {
-      toast({
-        title: 'Nenhum palpite',
-        description: 'Preencha pelo menos um placar antes de salvar.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Nenhum palpite', description: 'Preencha pelo menos um placar antes de salvar.', variant: 'destructive' });
       return;
     }
 
@@ -490,40 +463,24 @@ function HomeContent() {
 
       if (res.ok) {
         const data = await res.json();
-        toast({
-          title: 'Palpites salvos!',
-          description: data.message,
-        });
+        toast({ title: 'Palpites salvos!', description: data.message });
         setHasChanges(false);
 
-        // Refresh saved bets
         const betsRes = await fetch(`/api/bets?playerId=${player.id}`);
         if (betsRes.ok) {
           const betsData = await betsRes.json();
           const betsMap = new Map<string, { homeScore: number | null; awayScore: number | null; updatedAt: string }>();
           betsData.forEach((bet: any) => {
-            betsMap.set(bet.matchId, {
-              homeScore: bet.homeScore,
-              awayScore: bet.awayScore,
-              updatedAt: bet.updatedAt,
-            });
+            betsMap.set(bet.matchId, { homeScore: bet.homeScore, awayScore: bet.awayScore, updatedAt: bet.updatedAt });
           });
           setSavedBets(betsMap);
         }
       } else {
         const error = await res.json();
-        toast({
-          title: 'Erro ao salvar',
-          description: error.error || 'Tente novamente.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Erro ao salvar', description: error.error || 'Tente novamente.', variant: 'destructive' });
       }
     } catch (e) {
-      toast({
-        title: 'Erro de conexão',
-        description: 'Verifique sua internet e tente novamente.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro de conexão', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -534,10 +491,7 @@ function HomeContent() {
     const sanitized = value.replace(/[^0-9]/g, '').slice(0, 2);
     setBets(prev => {
       const newMap = new Map(prev);
-      newMap.set(matchId, {
-        ...prev.get(matchId) || { homeScore: '', awayScore: '' },
-        [field]: sanitized,
-      });
+      newMap.set(matchId, { ...prev.get(matchId) || { homeScore: '', awayScore: '' }, [field]: sanitized });
       return newMap;
     });
     setHasChanges(true);
@@ -546,11 +500,7 @@ function HomeContent() {
   // Admin login
   const handleAdminLogin = async () => {
     if (!adminPassword) {
-      toast({
-        title: 'Senha obrigatória',
-        description: 'Digite a senha de administrador.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Senha obrigatória', variant: 'destructive' });
       return;
     }
 
@@ -564,25 +514,12 @@ function HomeContent() {
         setCurrentPage('admin');
         loadAdminPhaseWinners();
       } else if (res.status === 401) {
-        toast({
-          title: 'Senha incorreta',
-          description: 'A senha de administrador está incorreta.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Senha incorreta', variant: 'destructive' });
       } else {
-        const errorData = await res.json().catch(() => ({}));
-        toast({
-          title: 'Erro no servidor',
-          description: errorData.error || `Erro ${res.status}. Verifique se o banco de dados está configurado corretamente.`,
-          variant: 'destructive',
-        });
+        toast({ title: 'Erro no servidor', variant: 'destructive' });
       }
     } catch (e) {
-      toast({
-        title: 'Erro de conexão',
-        description: 'Não foi possível conectar ao servidor.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro de conexão', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -616,6 +553,36 @@ function HomeContent() {
     }
   };
 
+  // Delete a single winner
+  const deleteWinner = async (phaseKey: string) => {
+    try {
+      const res = await fetch(`/api/admin/phase-winner?password=${encodeURIComponent(adminPassword)}&phase=${encodeURIComponent(phaseKey)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        toast({ title: 'Ganhador removido!', description: `Ganhador de "${getWinnerLabel(phaseKey)}" foi removido.` });
+        // Update local state
+        setAdminPhaseWinners(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(phaseKey);
+          return newMap;
+        });
+        // Also refresh public winners
+        const winnersRes = await fetch('/api/phase-winners');
+        if (winnersRes.ok) {
+          const data: PhaseWinnerData[] = await winnersRes.json();
+          const map = new Map<string, string>();
+          data.forEach((w) => map.set(w.phase, w.winnerName));
+          setPhaseWinners(map);
+        }
+      } else {
+        toast({ title: 'Erro ao remover', variant: 'destructive' });
+      }
+    } catch (e) {
+      toast({ title: 'Erro de conexão', variant: 'destructive' });
+    }
+  };
+
   // Delete player and their bets
   const handleDeletePlayer = async () => {
     if (!deleteTarget) return;
@@ -627,26 +594,15 @@ function HomeContent() {
       });
       if (res.ok) {
         const data = await res.json();
-        toast({
-          title: 'Participante removido',
-          description: data.message,
-        });
+        toast({ title: 'Participante removido', description: data.message });
         setDeleteTarget(null);
         await reloadAdminData();
       } else {
         const error = await res.json();
-        toast({
-          title: 'Erro ao deletar',
-          description: error.error || 'Tente novamente.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Erro ao deletar', description: error.error || 'Tente novamente.', variant: 'destructive' });
       }
     } catch (e) {
-      toast({
-        title: 'Erro de conexão',
-        description: 'Tente novamente mais tarde.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro de conexão', variant: 'destructive' });
     } finally {
       setDeleting(false);
     }
@@ -664,35 +620,18 @@ function HomeContent() {
     }
     setReorderLoading(true);
     try {
-      const res = await fetch(`/api/admin/reorder-matches?password=${encodeURIComponent(adminPassword)}`, {
-        method: 'POST',
-      });
+      const res = await fetch(`/api/admin/reorder-matches?password=${encodeURIComponent(adminPassword)}`, { method: 'POST' });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast({
-          title: 'Reordenacao concluida!',
-          description: `${data.summary.partidas_atualizadas} partidas atualizadas. ${data.summary.palpites_preservados} palpites preservados.`,
-        });
+        toast({ title: 'Reordenacao concluida!' });
         await reloadAdminData();
       } else if (res.status === 401) {
-        toast({
-          title: 'Senha incorreta',
-          description: 'A senha de administrador esta incorreta.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Senha incorreta', variant: 'destructive' });
       } else {
-        toast({
-          title: 'Erro na reordenacao',
-          description: data.detail || data.error || 'Erro desconhecido',
-          variant: 'destructive',
-        });
+        toast({ title: 'Erro na reordenacao', description: data.detail || data.error, variant: 'destructive' });
       }
     } catch (e) {
-      toast({
-        title: 'Erro de conexao',
-        description: 'Tente novamente mais tarde.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro de conexao', variant: 'destructive' });
     } finally {
       setReorderLoading(false);
     }
@@ -702,11 +641,8 @@ function HomeContent() {
   const toggleRound = (round: number) => {
     setExpandedRounds(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(round)) {
-        newSet.delete(round);
-      } else {
-        newSet.add(round);
-      }
+      if (newSet.has(round)) newSet.delete(round);
+      else newSet.add(round);
       return newSet;
     });
   };
@@ -725,36 +661,51 @@ function HomeContent() {
     let count = 0;
     currentMatches.forEach(match => {
       const bet = bets.get(match.id);
-      if (bet && (bet.homeScore !== '' || bet.awayScore !== '')) {
-        count++;
-      }
+      if (bet && (bet.homeScore !== '' || bet.awayScore !== '')) count++;
     });
     return count;
   }, [matches, phaseMatches, activePhase, bets]);
 
   // ========== ADMIN: Phase configuration methods ==========
 
-  // Load phase matches for admin config
+  // Load phase matches for admin config — FIX: pad with empty slots if existing matches < expected
   const loadAdminPhaseConfig = async (phase: string) => {
     setAdminPhaseConfig(phase);
     try {
       const res = await fetch(`/api/admin/phase-matches?phase=${phase}`);
       if (res.ok) {
         const data = await res.json();
+        const phaseConfig = KNOCKOUT_PHASES.find(p => p.key === phase);
+        const expectedCount = phaseConfig?.matchCount || 1;
+
         if (data.length > 0) {
-          setAdminPhaseMatches(data.map((m: any) => ({
+          // Map existing matches
+          const existing: typeof adminPhaseMatches = data.map((m: any) => ({
             homeTeam: m.homeTeam,
             awayTeam: m.awayTeam,
             homeName: m.homeName,
             awayName: m.awayName,
             matchNum: m.matchNum,
-          })));
+          }));
+
+          // If existing count is less than expected, pad with empty slots
+          if (existing.length < expectedCount) {
+            for (let i = existing.length; i < expectedCount; i++) {
+              existing.push({
+                homeTeam: '',
+                awayTeam: '',
+                homeName: '',
+                awayName: '',
+                matchNum: i + 1,
+              });
+            }
+          }
+
+          setAdminPhaseMatches(existing);
         } else {
           // Initialize with empty slots
-          const phaseConfig = KNOCKOUT_PHASES.find(p => p.key === phase);
-          const matchCount = phaseConfig?.matchCount || 1;
           const slots: typeof adminPhaseMatches = [];
-          for (let i = 0; i < matchCount; i++) {
+          for (let i = 0; i < expectedCount; i++) {
             slots.push({
               homeTeam: '',
               awayTeam: '',
@@ -773,50 +724,37 @@ function HomeContent() {
 
   // Save phase configuration
   const savePhaseConfig = async () => {
-    // Validate
     for (let i = 0; i < adminPhaseMatches.length; i++) {
       const m = adminPhaseMatches[i];
       if (!m.homeTeam || !m.awayTeam) {
-        toast({
-          title: 'Configuração incompleta',
-          description: `Jogo ${i + 1}: Selecione ambos os times antes de salvar.`,
-          variant: 'destructive',
-        });
+        toast({ title: 'Configuração incompleta', description: `Jogo ${i + 1}: Selecione ambos os times antes de salvar.`, variant: 'destructive' });
         return;
       }
       if (m.homeTeam === m.awayTeam) {
-        toast({
-          title: 'Times duplicados',
-          description: `Jogo ${i + 1}: O time mandante e visitante não podem ser iguais.`,
-          variant: 'destructive',
-        });
+        toast({ title: 'Times duplicados', description: `Jogo ${i + 1}: Times não podem ser iguais.`, variant: 'destructive' });
         return;
       }
     }
 
     setAdminPhaseSaving(true);
     try {
+      // Only send filled matches (skip empty slots)
+      const filledMatches = adminPhaseMatches.filter(m => m.homeTeam && m.awayTeam);
+
       const res = await fetch(`/api/admin/phase-matches?password=${encodeURIComponent(adminPassword)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phase: adminPhaseConfig,
-          matches: adminPhaseMatches,
-        }),
+        body: JSON.stringify({ phase: adminPhaseConfig, matches: filledMatches }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast({
-          title: 'Fase configurada!',
-          description: data.message,
-        });
-        // Refresh phase matches — delete cached and re-fetch
+        toast({ title: 'Fase configurada!', description: data.message });
+        // Clear cache and re-fetch
         setPhaseMatches(prev => {
           const newMap = new Map(prev);
           newMap.delete(adminPhaseConfig);
           return newMap;
         });
-        // Also immediately fetch the updated matches
         try {
           const fetchRes = await fetch(`/api/matches?phase=${adminPhaseConfig}`);
           if (fetchRes.ok) {
@@ -824,33 +762,21 @@ function HomeContent() {
             setPhaseMatches(prev => new Map(prev).set(adminPhaseConfig, fetchData));
           }
         } catch (e) {
-          console.error('Failed to refresh phase matches after save:', e);
+          console.error('Failed to refresh:', e);
         }
       } else if (res.status === 401) {
-        toast({
-          title: 'Senha incorreta',
-          description: 'A senha de administrador está incorreta.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Senha incorreta', variant: 'destructive' });
       } else {
-        toast({
-          title: 'Erro ao salvar',
-          description: data.error || 'Tente novamente.',
-          variant: 'destructive',
-        });
+        toast({ title: 'Erro ao salvar', description: data.error || 'Tente novamente.', variant: 'destructive' });
       }
     } catch (e) {
-      toast({
-        title: 'Erro de conexão',
-        description: 'Tente novamente mais tarde.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro de conexão', variant: 'destructive' });
     } finally {
       setAdminPhaseSaving(false);
     }
   };
 
-  // Save phase winners
+  // Save phase winners (only save non-empty values, delete empty ones)
   const savePhaseWinners = async () => {
     setAdminWinnerSaving(true);
     try {
@@ -864,19 +790,12 @@ function HomeContent() {
           });
           if (!res.ok) {
             const error = await res.json();
-            toast({
-              title: 'Erro ao salvar ganhador',
-              description: error.error || 'Tente novamente.',
-              variant: 'destructive',
-            });
+            toast({ title: 'Erro ao salvar ganhador', description: error.error || 'Tente novamente.', variant: 'destructive' });
             return;
           }
         }
       }
-      toast({
-        title: 'Ganhadores salvos!',
-        description: 'Todos os ganhadores foram atualizados.',
-      });
+      toast({ title: 'Ganhadores salvos!', description: 'Todos os ganhadores foram atualizados.' });
       // Refresh public winners
       const winnersRes = await fetch('/api/phase-winners');
       if (winnersRes.ok) {
@@ -886,11 +805,7 @@ function HomeContent() {
         setPhaseWinners(map);
       }
     } catch (e) {
-      toast({
-        title: 'Erro de conexão',
-        description: 'Tente novamente mais tarde.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro de conexão', variant: 'destructive' });
     } finally {
       setAdminWinnerSaving(false);
     }
@@ -920,10 +835,12 @@ function HomeContent() {
     setTeamPickerTarget(null);
   };
 
-  // Handle "Ver Ganhador" click
-  const handleViewWinner = (phase: string) => {
-    const winner = phaseWinners.get(phase);
-    setWinnerModal({ phase, winnerName: winner || null });
+  // Handle "Ver Ganhador" click — now works for all phases
+  const handleViewWinner = (phaseKey: string) => {
+    // For the "Ver Ganhador" button on match tabs, show the 1st place winner
+    const winnerKey = `${phaseKey}_1`;
+    const winner = phaseWinners.get(winnerKey);
+    setWinnerModal({ phase: phaseKey, winnerName: winner || null });
     if (winner) {
       playAudio('/winner.mp3');
     } else {
@@ -936,24 +853,18 @@ function HomeContent() {
   // Render home page
   const renderHome = () => (
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex flex-col">
-      {/* Header */}
       <header className="bg-gradient-to-r from-emerald-700 via-green-600 to-emerald-700 text-white shadow-lg">
         <div className="max-w-4xl mx-auto px-4 py-8 text-center">
           <div className="flex items-center justify-center gap-3 mb-3">
             <Trophy className="h-10 w-10 text-yellow-300" />
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-              Copa do Mundo 2026
-            </h1>
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Copa do Mundo 2026</h1>
             <Trophy className="h-10 w-10 text-yellow-300" />
           </div>
-          <p className="text-lg text-green-100 font-medium">
-            Bolão de Palpites — Faça seus palpites e torça!
-          </p>
+          <p className="text-lg text-green-100 font-medium">Bolão de Palpites — Faça seus palpites e torça!</p>
         </div>
       </header>
 
       <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-8 space-y-6">
-        {/* Setup Alert */}
         {needsSetup && (
           <Card className="border-red-300 bg-red-50 shadow-lg">
             <CardHeader className="pb-3">
@@ -967,24 +878,17 @@ function HomeContent() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-red-600">
-                Digite a senha de administrador abaixo e clique em &quot;Configurar Banco&quot; para criar as tabelas e carregar os jogos da Copa automaticamente.
+                Digite a senha de administrador abaixo e clique em &quot;Configurar Banco&quot; para criar as tabelas e carregar os jogos automaticamente.
               </p>
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <Input
-                    type="password"
-                    placeholder="Senha do administrador"
-                    value={adminPassword}
+                  <Input type="password" placeholder="Senha do administrador" value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSetup()}
-                    className="text-base border-red-300 focus:border-red-500"
-                  />
+                    className="text-base border-red-300 focus:border-red-500" />
                 </div>
-                <Button
-                  onClick={handleSetup}
-                  disabled={setupLoading || !adminPassword}
-                  className="bg-red-600 hover:bg-red-700 text-white px-6"
-                >
+                <Button onClick={handleSetup} disabled={setupLoading || !adminPassword}
+                  className="bg-red-600 hover:bg-red-700 text-white px-6">
                   {setupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Configurar Banco'}
                 </Button>
               </div>
@@ -992,12 +896,10 @@ function HomeContent() {
           </Card>
         )}
 
-        {/* Instructions */}
         <Card className="border-emerald-200 bg-emerald-50/50">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2 text-emerald-800">
-              <Info className="h-5 w-5" />
-              Como funciona
+              <Info className="h-5 w-5" /> Como funciona
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-emerald-700 space-y-2">
@@ -1010,36 +912,24 @@ function HomeContent() {
           </CardContent>
         </Card>
 
-        {/* Login/Registration Form */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-green-600" />
-              Entrar no Bolão
+              <Users className="h-5 w-5 text-green-600" /> Entrar no Bolão
             </CardTitle>
-            <CardDescription>
-              Digite seu nome para entrar ou criar sua conta
-            </CardDescription>
+            <CardDescription>Digite seu nome para entrar ou criar sua conta</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex gap-3">
               <div className="flex-1">
                 <Label htmlFor="name" className="sr-only">Seu nome</Label>
-                <Input
-                  id="name"
-                  placeholder="Digite seu nome"
-                  value={playerName}
+                <Input id="name" placeholder="Digite seu nome" value={playerName}
                   onChange={(e) => setPlayerName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                  maxLength={100}
-                  className="text-base"
-                />
+                  maxLength={100} className="text-base" />
               </div>
-              <Button
-                onClick={handleLogin}
-                disabled={loading || !playerName.trim()}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white px-6"
-              >
+              <Button onClick={handleLogin} disabled={loading || !playerName.trim()}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-6">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Entrar'}
               </Button>
             </div>
@@ -1047,7 +937,6 @@ function HomeContent() {
         </Card>
       </main>
 
-      {/* Footer */}
       <footer className="bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-auto">
         Bolão Copa do Mundo 2026 — Bons palpites!
         <a href="/?admin" className="ml-2 text-gray-300 hover:text-gray-400 text-xs">⚙</a>
@@ -1055,7 +944,7 @@ function HomeContent() {
     </div>
   );
 
-  // Render a match row (reused for both group and knockout)
+  // Render a match row
   const renderMatchRow = (match: Match) => {
     const bet = bets.get(match.id) || { homeScore: '', awayScore: '' };
     const savedBet = savedBets.get(match.id);
@@ -1064,50 +953,29 @@ function HomeContent() {
 
     return (
       <div key={match.id} className={`px-4 py-3 flex items-center gap-2 md:gap-4 ${isFilled ? 'bg-green-50/50' : ''}`}>
-        {/* Home team */}
         <div className="flex-1 text-right">
           <span className="font-bold text-sm md:text-base text-gray-800">{match.homeTeam}</span>
           <span className="hidden md:inline text-xs text-gray-500 ml-1">({match.homeName})</span>
           <span className="md:hidden block text-xs text-gray-500">{match.homeName}</span>
         </div>
-
-        {/* Score inputs */}
         <div className="flex items-center gap-2 shrink-0">
-          <Input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            min={0}
-            max={30}
+          <Input type="text" inputMode="numeric" pattern="[0-9]*" min={0} max={30}
             className="w-14 h-10 text-center text-lg font-bold border-2 border-gray-200 focus:border-green-500 focus:ring-green-500"
-            placeholder="-"
-            value={bet.homeScore}
+            placeholder="-" value={bet.homeScore}
             onChange={(e) => updateBet(match.id, 'homeScore', e.target.value)}
-            aria-label={`Placar ${match.homeTeam}`}
-          />
+            aria-label={`Placar ${match.homeTeam}`} />
           <span className="text-lg font-bold text-gray-400">×</span>
-          <Input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            min={0}
-            max={30}
+          <Input type="text" inputMode="numeric" pattern="[0-9]*" min={0} max={30}
             className="w-14 h-10 text-center text-lg font-bold border-2 border-gray-200 focus:border-green-500 focus:ring-green-500"
-            placeholder="-"
-            value={bet.awayScore}
+            placeholder="-" value={bet.awayScore}
             onChange={(e) => updateBet(match.id, 'awayScore', e.target.value)}
-            aria-label={`Placar ${match.awayTeam}`}
-          />
+            aria-label={`Placar ${match.awayTeam}`} />
         </div>
-
-        {/* Away team */}
         <div className="flex-1 text-left">
           <span className="font-bold text-sm md:text-base text-gray-800">{match.awayTeam}</span>
           <span className="hidden md:inline text-xs text-gray-500 ml-1">({match.awayName})</span>
           <span className="md:hidden block text-xs text-gray-500">{match.awayName}</span>
         </div>
-
-        {/* Save indicator */}
         {isSaved && (
           <div className="shrink-0 flex flex-col items-center">
             <Check className="h-4 w-4 text-green-500" />
@@ -1149,22 +1017,16 @@ function HomeContent() {
                   <p className="text-sm text-green-100">Olá,</p>
                   <p className="font-semibold">{player.name}</p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
+                <Button variant="outline" size="sm"
                   onClick={() => { setPlayer(null); setBets(new Map()); setSavedBets(new Map()); setCurrentPage('home'); }}
-                  className="bg-white/10 border-white/30 text-white hover:bg-white/20 text-xs"
-                >
+                  className="bg-white/10 border-white/30 text-white hover:bg-white/20 text-xs">
                   Sair
                 </Button>
               </div>
             </div>
-            {/* Progress bar */}
             <div className="mt-3 bg-green-800/40 rounded-full h-2">
-              <div
-                className="bg-yellow-300 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${totalMatches > 0 ? Math.round((totalFilled / totalMatches) * 100) : 0}%` }}
-              />
+              <div className="bg-yellow-300 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${totalMatches > 0 ? Math.round((totalFilled / totalMatches) * 100) : 0}%` }} />
             </div>
             <p className="text-xs text-green-200 mt-1">
               {totalFilled} de {totalMatches} palpites preenchidos ({totalMatches > 0 ? Math.round((totalFilled / totalMatches) * 100) : 0}%)
@@ -1175,27 +1037,15 @@ function HomeContent() {
         {/* Sub-tabs: Palpites / Ganhadores */}
         <div className="bg-emerald-900 sticky top-[104px] z-10 shadow-md">
           <div className="max-w-4xl mx-auto flex">
-            <button
-              onClick={() => setBetSubTab('bets')}
+            <button onClick={() => setBetSubTab('bets')}
               className={`flex-1 px-4 py-2.5 text-sm font-semibold text-center transition-colors ${
-                betSubTab === 'bets'
-                  ? 'bg-yellow-400 text-emerald-900'
-                  : 'text-green-200 hover:bg-emerald-800/50'
-              }`}
-            >
-              <Save className="h-4 w-4 inline mr-1" />
-              Palpites
+                betSubTab === 'bets' ? 'bg-yellow-400 text-emerald-900' : 'text-green-200 hover:bg-emerald-800/50'}`}>
+              <Save className="h-4 w-4 inline mr-1" /> Palpites
             </button>
-            <button
-              onClick={() => setBetSubTab('winners')}
+            <button onClick={() => setBetSubTab('winners')}
               className={`flex-1 px-4 py-2.5 text-sm font-semibold text-center transition-colors ${
-                betSubTab === 'winners'
-                  ? 'bg-yellow-400 text-emerald-900'
-                  : 'text-green-200 hover:bg-emerald-800/50'
-              }`}
-            >
-              <Award className="h-4 w-4 inline mr-1" />
-              Ganhadores
+                betSubTab === 'winners' ? 'bg-yellow-400 text-emerald-900' : 'text-green-200 hover:bg-emerald-800/50'}`}>
+              <Award className="h-4 w-4 inline mr-1" /> Ganhadores
             </button>
           </div>
         </div>
@@ -1205,41 +1055,43 @@ function HomeContent() {
           {/* === WINNERS TAB === */}
           {betSubTab === 'winners' && (
             <div className="space-y-3">
-              {WINNER_CATEGORIES.map(cat => {
-                const winner = phaseWinners.get(cat.key);
-                return (
-                  <Card key={cat.key} className="overflow-hidden">
-                    <div
-                      className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
-                      onClick={() => handleViewWinner(cat.key)}
-                    >
-                      <div className="flex items-center gap-3">
-                        {cat.key === 'segundo_lugar' ? (
-                          <Medal className="h-5 w-5 text-gray-400" />
-                        ) : cat.key === 'terceiro_lugar_geral' ? (
-                          <Medal className="h-5 w-5 text-amber-600" />
-                        ) : (
-                          <Trophy className="h-5 w-5 text-yellow-500" />
-                        )}
-                        <div>
-                          <p className="font-semibold text-sm text-gray-800">{cat.label}</p>
-                          {winner ? (
-                            <p className="text-xs text-emerald-600 font-medium">{winner}</p>
-                          ) : (
-                            <p className="text-xs text-gray-400">Ainda não definido</p>
-                          )}
+              {PHASES_FOR_WINNERS.map(phase => (
+                <Card key={phase.key} className="overflow-hidden">
+                  <div className="bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2">
+                    <span className="font-bold text-sm">{phase.label}</span>
+                  </div>
+                  <CardContent className="p-0 divide-y divide-gray-100">
+                    {WINNER_POSITIONS.map(pos => {
+                      const winnerKey = `${phase.key}${pos.suffix}`;
+                      const winner = phaseWinners.get(winnerKey);
+                      return (
+                        <div key={winnerKey}
+                          className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                          onClick={() => {
+                            setWinnerModal({ phase: winnerKey, winnerName: winner || null });
+                            if (winner) playAudio('/winner.mp3');
+                            else playAudio('/no_winner_to_show.mp3');
+                          }}>
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg">{pos.emoji}</span>
+                            <div>
+                              <p className="font-semibold text-sm text-gray-800">{pos.label}</p>
+                              {winner ? (
+                                <p className="text-xs text-emerald-600 font-medium">{winner}</p>
+                              ) : (
+                                <p className="text-xs text-gray-400">Ainda não definido</p>
+                              )}
+                            </div>
+                          </div>
+                          <Badge variant={winner ? 'default' : 'secondary'} className={winner ? 'bg-emerald-600' : ''}>
+                            {winner ? 'Ver' : '???'}
+                          </Badge>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {winner && <span className="text-lg">🏆</span>}
-                        <Badge variant={winner ? 'default' : 'secondary'} className={winner ? 'bg-emerald-600' : ''}>
-                          {winner ? 'Ver' : '???'}
-                        </Badge>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })}
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
 
@@ -1253,17 +1105,11 @@ function HomeContent() {
                     const hasMatches = phase.key === 'groups' || (phaseMatches.has(phase.key) && (phaseMatches.get(phase.key)?.length || 0) > 0);
                     const isActive = activePhase === phase.key;
                     return (
-                      <button
-                        key={phase.key}
-                        onClick={() => handlePhaseTabClick(phase.key)}
+                      <button key={phase.key} onClick={() => handlePhaseTabClick(phase.key)}
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                          isActive
-                            ? 'bg-yellow-400 text-emerald-900 shadow-md'
-                            : hasMatches
-                              ? 'bg-emerald-700/50 text-green-100 hover:bg-emerald-600/50'
-                              : 'bg-emerald-900/30 text-green-300/40 hover:bg-emerald-800/30 hover:text-green-200/60'
-                        }`}
-                      >
+                          isActive ? 'bg-yellow-400 text-emerald-900 shadow-md'
+                            : hasMatches ? 'bg-emerald-700/50 text-green-100 hover:bg-emerald-600/50'
+                              : 'bg-emerald-900/30 text-green-300/40 hover:bg-emerald-800/30 hover:text-green-200/60'}`}>
                         {phase.label}
                         {hasMatches && phase.key !== 'groups' && (
                           <span className="ml-1 text-xs opacity-70">({(phaseMatches.get(phase.key)?.length || 0)})</span>
@@ -1280,14 +1126,12 @@ function HomeContent() {
                   <p className="text-sm text-blue-800">
                     <strong>Instruções:</strong> Preencha o placar de cada jogo com números inteiros (0 a 30).
                     Clique em <strong>&quot;Salvar Palpites&quot;</strong> ao final da página quando terminar.
-                    Você pode salvar quantas vezes quiser — os palpites anteriores serão substituídos.
                   </p>
                 </CardContent>
               </Card>
 
               {/* Phase content */}
               {activePhase === 'groups' ? (
-                // Group stage: rounds with collapsible sections
                 <>
                   {[1, 2, 3].map(round => {
                     const roundMatches = matchesByRound[round] || [];
@@ -1299,17 +1143,11 @@ function HomeContent() {
 
                     return (
                       <Card key={round} className="overflow-hidden">
-                        <button
-                          onClick={() => toggleRound(round)}
-                          className="w-full text-left bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-4 flex items-center justify-between hover:from-emerald-700 hover:to-green-700 transition-colors"
-                        >
+                        <button onClick={() => toggleRound(round)}
+                          className="w-full text-left bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-4 flex items-center justify-between hover:from-emerald-700 hover:to-green-700 transition-colors">
                           <div className="flex items-center gap-3">
-                            <Badge variant="secondary" className="bg-yellow-300 text-emerald-900 font-bold">
-                              {ROUND_LABELS[round]}
-                            </Badge>
-                            <span className="text-sm text-green-100">
-                              {roundFilled}/{roundMatches.length} palpites
-                            </span>
+                            <Badge variant="secondary" className="bg-yellow-300 text-emerald-900 font-bold">{ROUND_LABELS[round]}</Badge>
+                            <span className="text-sm text-green-100">{roundFilled}/{roundMatches.length} palpites</span>
                           </div>
                           {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
                         </button>
@@ -1321,9 +1159,15 @@ function HomeContent() {
                       </Card>
                     );
                   })}
+
+                  {/* Ver Ganhador button for GROUPS phase too */}
+                  <Button onClick={() => handleViewWinner('groups')}
+                    variant="outline"
+                    className="w-full h-12 text-base font-bold border-yellow-400 text-yellow-700 hover:bg-yellow-50 bg-yellow-50/50">
+                    <Star className="h-5 w-5 mr-2" /> Ver Ganhador da 1ª Fase
+                  </Button>
                 </>
               ) : (
-                // Knockout phase: flat match list
                 <>
                   {phaseLoading ? (
                     <div className="flex justify-center py-12">
@@ -1349,29 +1193,19 @@ function HomeContent() {
                   )}
 
                   {/* Ver Ganhador button for knockout phases */}
-                  <Button
-                    onClick={() => handleViewWinner(activePhase)}
+                  <Button onClick={() => handleViewWinner(activePhase)}
                     variant="outline"
-                    className="w-full h-12 text-base font-bold border-yellow-400 text-yellow-700 hover:bg-yellow-50 bg-yellow-50/50"
-                  >
-                    <Star className="h-5 w-5 mr-2" />
-                    Ver Ganhador
+                    className="w-full h-12 text-base font-bold border-yellow-400 text-yellow-700 hover:bg-yellow-50 bg-yellow-50/50">
+                    <Star className="h-5 w-5 mr-2" /> Ver Ganhador
                   </Button>
                 </>
               )}
 
               {/* Save button */}
               <div className="sticky bottom-4 z-10">
-                <Button
-                  onClick={handleSave}
-                  disabled={loading}
-                  className="w-full h-14 text-lg font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl rounded-xl"
-                >
-                  {loading ? (
-                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                  ) : (
-                    <Save className="h-5 w-5 mr-2" />
-                  )}
+                <Button onClick={handleSave} disabled={loading}
+                  className="w-full h-14 text-lg font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl rounded-xl">
+                  {loading ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Save className="h-5 w-5 mr-2" />}
                   Salvar Palpites
                   {hasChanges && <span className="ml-2 text-yellow-200">●</span>}
                 </Button>
@@ -1388,7 +1222,7 @@ function HomeContent() {
                 {winnerModal?.winnerName ? (
                   <>
                     <PartyPopper className="h-6 w-6 text-yellow-500" />
-                    Ganhador da {WINNER_CATEGORIES.find(c => c.key === winnerModal?.phase)?.label || PHASES.find(p => p.key === winnerModal?.phase)?.label || winnerModal?.phase}!
+                    {getWinnerLabel(winnerModal.phase)}
                     <PartyPopper className="h-6 w-6 text-yellow-500" />
                   </>
                 ) : (
@@ -1402,39 +1236,26 @@ function HomeContent() {
             <div className="py-6 text-center">
               {winnerModal?.winnerName ? (
                 <div className="space-y-4">
-                  <div className="text-5xl font-black text-emerald-700 animate-bounce">
-                    🏆
-                  </div>
-                  <p className="text-2xl font-bold text-emerald-800">
-                    {winnerModal.winnerName}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Parabéns ao ganhador desta fase!
-                  </p>
+                  <div className="text-5xl font-black text-emerald-700 animate-bounce">🏆</div>
+                  <p className="text-2xl font-bold text-emerald-800">{winnerModal.winnerName}</p>
+                  <p className="text-sm text-gray-500">Parabéns ao ganhador!</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="text-5xl">
-                    🤨
-                  </div>
+                  <div className="text-5xl">🤨</div>
                   <p className="text-lg font-semibold text-amber-700">
                     Essa fase nem terminou ainda... Tá fazendo o que aqui? 🤨
                   </p>
-                  <p className="text-sm text-gray-500">
-                    Volte quando o resultado estiver definido!
-                  </p>
+                  <p className="text-sm text-gray-500">Volte quando o resultado estiver definido!</p>
                 </div>
               )}
             </div>
             <div className="flex justify-center">
-              <Button onClick={() => setWinnerModal(null)} className="bg-emerald-600 hover:bg-emerald-700">
-                Fechar
-              </Button>
+              <Button onClick={() => setWinnerModal(null)} className="bg-emerald-600 hover:bg-emerald-700">Fechar</Button>
             </div>
           </DialogContent>
         </Dialog>
 
-        {/* Footer */}
         <footer className="bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-4">
           Bolão Copa do Mundo 2026 — {player.name}
         </footer>
@@ -1445,7 +1266,6 @@ function HomeContent() {
   // Render admin panel
   const renderAdmin = () => (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-yellow-50 flex flex-col">
-      {/* Header */}
       <header className="bg-gradient-to-r from-amber-700 via-yellow-600 to-amber-700 text-white shadow-lg">
         <div className="max-w-6xl mx-auto px-4 py-6">
           <div className="flex items-center justify-between">
@@ -1457,30 +1277,19 @@ function HomeContent() {
               </div>
             </div>
             {isAdminAuth && (
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  onClick={handleReorder}
-                  disabled={reorderLoading}
-                  className="bg-white/10 border-white/30 text-white hover:bg-white/20"
-                  title="Atualiza a ordem das partidas conforme seed-data.ts, preservando palpites"
-                >
+              <div className="flex items-center gap-3 flex-wrap">
+                <Button variant="outline" onClick={handleReorder} disabled={reorderLoading}
+                  className="bg-white/10 border-white/30 text-white hover:bg-white/20">
                   {reorderLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <AlertTriangle className="h-4 w-4 mr-2" />}
                   Reordenar Jogos
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleExport}
-                  className="bg-white/10 border-white/30 text-white hover:bg-white/20"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Exportar CSV
+                <Button variant="outline" onClick={handleExport}
+                  className="bg-white/10 border-white/30 text-white hover:bg-white/20">
+                  <Download className="h-4 w-4 mr-2" /> Exportar CSV
                 </Button>
-                <Button
-                  variant="outline"
+                <Button variant="outline"
                   onClick={() => { setIsAdminAuth(false); setAdminPassword(''); window.location.href = '/'; }}
-                  className="bg-white/10 border-white/30 text-white hover:bg-white/20"
-                >
+                  className="bg-white/10 border-white/30 text-white hover:bg-white/20">
                   Sair
                 </Button>
               </div>
@@ -1500,23 +1309,13 @@ function HomeContent() {
             <CardContent className="space-y-4">
               <div>
                 <Label htmlFor="admin-pass-page">Senha</Label>
-                <Input
-                  id="admin-pass-page"
-                  type="password"
-                  placeholder="Senha do administrador"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
-                  className="text-base mt-1"
-                />
+                <Input id="admin-pass-page" type="password" placeholder="Senha do administrador"
+                  value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()} className="text-base mt-1" />
               </div>
-              <Button
-                onClick={handleAdminLogin}
-                disabled={loading || !adminPassword}
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-              >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Entrar
+              <Button onClick={handleAdminLogin} disabled={loading || !adminPassword}
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white">
+                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Entrar
               </Button>
             </CardContent>
           </Card>
@@ -1524,114 +1323,72 @@ function HomeContent() {
           <>
             {/* Admin tabs */}
             <div className="flex gap-2 overflow-x-auto pb-2">
-              <button
-                onClick={() => setAdminTab('bets')}
+              <button onClick={() => setAdminTab('bets')}
                 className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-                  adminTab === 'bets'
-                    ? 'bg-amber-600 text-white shadow-md'
-                    : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'
-                }`}
-              >
-                <Users className="h-4 w-4 inline mr-1" />
-                Palpites
+                  adminTab === 'bets' ? 'bg-amber-600 text-white shadow-md' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'}`}>
+                <Users className="h-4 w-4 inline mr-1" /> Palpites
               </button>
-              <button
-                onClick={() => { setAdminTab('phases'); loadAdminPhaseConfig(adminPhaseConfig); }}
+              <button onClick={() => { setAdminTab('phases'); loadAdminPhaseConfig(adminPhaseConfig); }}
                 className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-                  adminTab === 'phases'
-                    ? 'bg-amber-600 text-white shadow-md'
-                    : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'
-                }`}
-              >
-                <Settings className="h-4 w-4 inline mr-1" />
-                Configurar Fases
+                  adminTab === 'phases' ? 'bg-amber-600 text-white shadow-md' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'}`}>
+                <Settings className="h-4 w-4 inline mr-1" /> Configurar Fases
               </button>
-              <button
-                onClick={() => { setAdminTab('winners'); loadAdminPhaseWinners(); }}
+              <button onClick={() => { setAdminTab('winners'); loadAdminPhaseWinners(); }}
                 className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-                  adminTab === 'winners'
-                    ? 'bg-amber-600 text-white shadow-md'
-                    : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'
-                }`}
-              >
-                <Award className="h-4 w-4 inline mr-1" />
-                Ganhadores
+                  adminTab === 'winners' ? 'bg-amber-600 text-white shadow-md' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'}`}>
+                <Award className="h-4 w-4 inline mr-1" /> Ganhadores
               </button>
             </div>
 
             {/* Bets tab */}
             {adminTab === 'bets' && (
               <>
-                {/* Stats */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Card>
-                    <CardContent className="pt-6 text-center">
-                      <p className="text-3xl font-bold text-amber-700">{adminData.length}</p>
-                      <p className="text-sm text-gray-500">Participantes</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-6 text-center">
-                      <p className="text-3xl font-bold text-green-700">
-                        {adminData.reduce((acc, p) => acc + p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length, 0)}
-                      </p>
-                      <p className="text-sm text-gray-500">Palpites totais</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-6 text-center">
-                      <p className="text-3xl font-bold text-blue-700">
-                        {adminData.filter(p => p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length > 0).length}
-                      </p>
-                      <p className="text-sm text-gray-500">Com palpites</p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="pt-6 text-center">
-                      <p className="text-3xl font-bold text-red-700">
-                        {adminData.filter(p => p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length === 0).length}
-                      </p>
-                      <p className="text-sm text-gray-500">Sem palpites</p>
-                    </CardContent>
-                  </Card>
+                  <Card><CardContent className="pt-6 text-center">
+                    <p className="text-3xl font-bold text-amber-700">{adminData.length}</p>
+                    <p className="text-sm text-gray-500">Participantes</p>
+                  </CardContent></Card>
+                  <Card><CardContent className="pt-6 text-center">
+                    <p className="text-3xl font-bold text-green-700">
+                      {adminData.reduce((acc, p) => acc + p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length, 0)}
+                    </p>
+                    <p className="text-sm text-gray-500">Palpites totais</p>
+                  </CardContent></Card>
+                  <Card><CardContent className="pt-6 text-center">
+                    <p className="text-3xl font-bold text-blue-700">
+                      {adminData.filter(p => p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length > 0).length}
+                    </p>
+                    <p className="text-sm text-gray-500">Com palpites</p>
+                  </CardContent></Card>
+                  <Card><CardContent className="pt-6 text-center">
+                    <p className="text-3xl font-bold text-red-700">
+                      {adminData.filter(p => p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length === 0).length}
+                    </p>
+                    <p className="text-sm text-gray-500">Sem palpites</p>
+                  </CardContent></Card>
                 </div>
 
-                {/* Player bets */}
                 <Card>
                   <CardHeader>
                     <div className="flex items-center justify-between">
-                      <CardTitle className="flex items-center gap-2">
-                        <Users className="h-5 w-5" />
-                        Palpites dos Participantes
-                      </CardTitle>
-                      <Button variant="outline" size="sm" onClick={handleExport}>
-                        <Download className="h-4 w-4 mr-1" />
-                        CSV
-                      </Button>
+                      <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" /> Palpites dos Participantes</CardTitle>
+                      <Button variant="outline" size="sm" onClick={handleExport}><Download className="h-4 w-4 mr-1" /> CSV</Button>
                     </div>
                   </CardHeader>
                   <CardContent className="p-0">
                     <ScrollArea className="max-h-[600px]">
                       <div className="divide-y">
                         {adminData.length === 0 ? (
-                          <div className="p-8 text-center text-gray-500">
-                            Nenhum participante registrado ainda.
-                          </div>
+                          <div className="p-8 text-center text-gray-500">Nenhum participante registrado ainda.</div>
                         ) : (
                           adminData.map((p: any) => {
                             const betCount = p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length;
                             const filledBets = p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null);
                             const betsByRound = [1, 2, 3].map(round =>
-                              p.bets
-                                .filter((b: any) => b.match.round === round)
-                                .sort((a: any, b: any) => a.match.matchNum - b.match.matchNum)
+                              p.bets.filter((b: any) => b.match.round === round).sort((a: any, b: any) => a.match.matchNum - b.match.matchNum)
                             );
-
                             const lastUpdated = filledBets.length > 0
-                              ? filledBets.reduce((latest: Date, b: any) => {
-                                  const d = new Date(b.updatedAt);
-                                  return d > latest ? d : latest;
-                                }, new Date(0))
+                              ? filledBets.reduce((latest: Date, b: any) => { const d = new Date(b.updatedAt); return d > latest ? d : latest; }, new Date(0))
                               : null;
 
                             return (
@@ -1640,13 +1397,11 @@ function HomeContent() {
                                   <div>
                                     <h3 className="font-semibold text-lg">{p.name}</h3>
                                     <div className="text-sm text-gray-500 space-y-0.5">
-                                      <p className="flex items-center gap-1">
-                                        <Clock className="h-3.5 w-3.5" />
+                                      <p className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />
                                         Registro: {new Date(p.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                       </p>
                                       {lastUpdated && (
-                                        <p className="flex items-center gap-1">
-                                          <Clock className="h-3.5 w-3.5" />
+                                        <p className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" />
                                           Último palpite: {lastUpdated.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                                         </p>
                                       )}
@@ -1654,41 +1409,24 @@ function HomeContent() {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2">
-                                    <Badge variant="secondary">
-                                      {betCount > 0 ? `${betCount} palpites` : 'Sem palpites'}
-                                    </Badge>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
-                                      onClick={() => setDeleteTarget({ id: p.id, name: p.name, betCount })}
-                                    >
+                                    <Badge variant="secondary">{betCount > 0 ? `${betCount} palpites` : 'Sem palpites'}</Badge>
+                                    <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                                      onClick={() => setDeleteTarget({ id: p.id, name: p.name, betCount })}>
                                       <Trash2 className="h-4 w-4" />
                                     </Button>
                                   </div>
                                 </div>
-
-                                {/* Bets by round */}
                                 <div className="space-y-3">
                                   {[1, 2, 3].map(round => (
                                     <div key={round}>
                                       <p className="text-xs font-semibold text-gray-500 mb-1">{ROUND_LABELS[round]}</p>
                                       <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
                                         {betsByRound[round - 1].map((bet: any) => (
-                                          <div key={bet.id} className="bg-gray-50 rounded p-1.5 text-center text-xs group relative">
-                                            <div className="text-[10px] text-gray-400 truncate">
-                                              {bet.match.homeTeam} v {bet.match.awayTeam}
-                                            </div>
+                                          <div key={bet.id} className="bg-gray-50 rounded p-1.5 text-center text-xs">
+                                            <div className="text-[10px] text-gray-400 truncate">{bet.match.homeTeam} v {bet.match.awayTeam}</div>
                                             <div className="font-bold text-gray-800">
-                                              {bet.homeScore !== null && bet.awayScore !== null
-                                                ? `${bet.homeScore}×${bet.awayScore}`
-                                                : '—'}
+                                              {bet.homeScore !== null && bet.awayScore !== null ? `${bet.homeScore}×${bet.awayScore}` : '—'}
                                             </div>
-                                            {bet.homeScore !== null && bet.awayScore !== null && (
-                                              <div className="text-[8px] text-gray-400 mt-0.5">
-                                                {new Date(bet.updatedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                              </div>
-                                            )}
                                           </div>
                                         ))}
                                       </div>
@@ -1710,23 +1448,14 @@ function HomeContent() {
             {adminTab === 'phases' && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Settings className="h-5 w-5" />
-                    Configurar Fases Eliminatórias
-                  </CardTitle>
-                  <CardDescription>
-                    Selecione os times para cada jogo das fases eliminatórias
-                  </CardDescription>
+                  <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Configurar Fases Eliminatórias</CardTitle>
+                  <CardDescription>Selecione os times para cada jogo das fases eliminatórias</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Phase selector */}
                   <div>
                     <Label>Fase</Label>
-                    <select
-                      value={adminPhaseConfig}
-                      onChange={(e) => loadAdminPhaseConfig(e.target.value)}
-                      className="w-full mt-1 p-2 border rounded-lg bg-white text-sm"
-                    >
+                    <select value={adminPhaseConfig} onChange={(e) => loadAdminPhaseConfig(e.target.value)}
+                      className="w-full mt-1 p-2 border rounded-lg bg-white text-sm">
                       {KNOCKOUT_PHASES.map(phase => (
                         <option key={phase.key} value={phase.key}>
                           {phase.label} ({phase.matchCount} jogos, {phase.matchSlots} times)
@@ -1735,44 +1464,27 @@ function HomeContent() {
                     </select>
                   </div>
 
-                  {/* Match slots */}
                   <div className="space-y-3">
                     {adminPhaseMatches.map((match, idx) => (
                       <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
                         <span className="text-sm font-bold text-gray-500 w-8 shrink-0">J{idx + 1}</span>
-                        {/* Home team selector */}
-                        <button
-                          onClick={() => openTeamPicker(idx, 'home')}
+                        <button onClick={() => openTeamPicker(idx, 'home')}
                           className={`flex-1 p-2 rounded border text-left text-sm transition-colors ${
-                            match.homeTeam
-                              ? 'bg-white border-green-300 hover:border-green-400'
-                              : 'bg-gray-100 border-dashed border-gray-300 hover:border-gray-400'
-                          }`}
-                        >
+                            match.homeTeam ? 'bg-white border-green-300 hover:border-green-400'
+                              : 'bg-gray-100 border-dashed border-gray-300 hover:border-gray-400'}`}>
                           {match.homeTeam ? (
-                            <span>
-                              <span className="font-bold">{match.homeTeam}</span>
-                              <span className="text-gray-500 ml-1">({match.homeName})</span>
-                            </span>
+                            <span><span className="font-bold">{match.homeTeam}</span><span className="text-gray-500 ml-1">({match.homeName})</span></span>
                           ) : (
                             <span className="text-gray-400">Selecione mandante...</span>
                           )}
                         </button>
                         <span className="text-gray-400 font-bold">×</span>
-                        {/* Away team selector */}
-                        <button
-                          onClick={() => openTeamPicker(idx, 'away')}
+                        <button onClick={() => openTeamPicker(idx, 'away')}
                           className={`flex-1 p-2 rounded border text-left text-sm transition-colors ${
-                            match.awayTeam
-                              ? 'bg-white border-green-300 hover:border-green-400'
-                              : 'bg-gray-100 border-dashed border-gray-300 hover:border-gray-400'
-                          }`}
-                        >
+                            match.awayTeam ? 'bg-white border-green-300 hover:border-green-400'
+                              : 'bg-gray-100 border-dashed border-gray-300 hover:border-gray-400'}`}>
                           {match.awayTeam ? (
-                            <span>
-                              <span className="font-bold">{match.awayTeam}</span>
-                              <span className="text-gray-500 ml-1">({match.awayName})</span>
-                            </span>
+                            <span><span className="font-bold">{match.awayTeam}</span><span className="text-gray-500 ml-1">({match.awayName})</span></span>
                           ) : (
                             <span className="text-gray-400">Selecione visitante...</span>
                           )}
@@ -1781,12 +1493,8 @@ function HomeContent() {
                     ))}
                   </div>
 
-                  {/* Save button */}
-                  <Button
-                    onClick={savePhaseConfig}
-                    disabled={adminPhaseSaving}
-                    className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-                  >
+                  <Button onClick={savePhaseConfig} disabled={adminPhaseSaving}
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white">
                     {adminPhaseSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                     Salvar Configuração da Fase
                   </Button>
@@ -1794,36 +1502,48 @@ function HomeContent() {
               </Card>
             )}
 
-            {/* Winners tab */}
+            {/* Winners tab — restructured: 1º/2º/3º per phase + delete button */}
             {adminTab === 'winners' && (
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Award className="h-5 w-5" />
-                    Ganhadores
-                  </CardTitle>
-                  <CardDescription>
-                    Defina o ganhador de cada fase, além do 2º e 3º lugar geral
-                  </CardDescription>
+                  <CardTitle className="flex items-center gap-2"><Award className="h-5 w-5" /> Ganhadores</CardTitle>
+                  <CardDescription>Defina o 1º, 2º e 3º lugar de cada fase. Clique no ✕ para remover um ganhador.</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {WINNER_CATEGORIES.map(cat => (
-                    <div key={cat.key} className="flex items-center gap-3">
-                      <Label className="w-48 shrink-0 text-sm font-medium">{cat.label}</Label>
-                      <Input
-                        placeholder="Nome do ganhador"
-                        value={adminPhaseWinners.get(cat.key) || ''}
-                        onChange={(e) => setAdminPhaseWinners(prev => new Map(prev).set(cat.key, e.target.value))}
-                        className="flex-1"
-                      />
+                <CardContent className="space-y-6">
+                  {PHASES_FOR_WINNERS.map(phase => (
+                    <div key={phase.key} className="space-y-2">
+                      <h4 className="font-semibold text-sm text-amber-800 border-b border-amber-200 pb-1">{phase.label}</h4>
+                      {WINNER_POSITIONS.map(pos => {
+                        const winnerKey = `${phase.key}${pos.suffix}`;
+                        const currentValue = adminPhaseWinners.get(winnerKey) || '';
+                        return (
+                          <div key={winnerKey} className="flex items-center gap-2">
+                            <span className="text-lg w-6 text-center shrink-0">{pos.emoji}</span>
+                            <Label className="w-20 shrink-0 text-xs font-medium">{pos.label}</Label>
+                            <div className="flex-1 flex items-center gap-2">
+                              <Input
+                                placeholder="Nome do ganhador"
+                                value={currentValue}
+                                onChange={(e) => setAdminPhaseWinners(prev => new Map(prev).set(winnerKey, e.target.value))}
+                                className="flex-1 text-sm"
+                              />
+                              {currentValue && (
+                                <Button variant="ghost" size="sm"
+                                  onClick={() => deleteWinner(winnerKey)}
+                                  className="text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
+                                  title="Remover este ganhador">
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   ))}
 
-                  <Button
-                    onClick={savePhaseWinners}
-                    disabled={adminWinnerSaving}
-                    className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-                  >
+                  <Button onClick={savePhaseWinners} disabled={adminWinnerSaving}
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white">
                     {adminWinnerSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                     Salvar Ganhadores
                   </Button>
@@ -1843,29 +1563,20 @@ function HomeContent() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <Input
-              placeholder="Buscar time..."
-              value={teamSearch}
-              onChange={(e) => setTeamSearch(e.target.value)}
-              className="w-full"
-            />
+            <Input placeholder="Buscar time..." value={teamSearch}
+              onChange={(e) => setTeamSearch(e.target.value)} className="w-full" />
             <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
-              {TEAMS
-                .filter(team => {
-                  if (!teamSearch) return true;
-                  const q = teamSearch.toLowerCase();
-                  return team.abbr.toLowerCase().includes(q) || team.name.toLowerCase().includes(q);
-                })
-                .map(team => (
-                  <button
-                    key={team.abbr}
-                    onClick={() => selectTeam(team)}
-                    className="p-2 rounded-lg border border-gray-200 hover:border-green-400 hover:bg-green-50 text-left transition-colors"
-                  >
-                    <div className="font-bold text-sm">{team.abbr}</div>
-                    <div className="text-xs text-gray-500 truncate">{team.name}</div>
-                  </button>
-                ))}
+              {TEAMS.filter(team => {
+                if (!teamSearch) return true;
+                const q = teamSearch.toLowerCase();
+                return team.abbr.toLowerCase().includes(q) || team.name.toLowerCase().includes(q);
+              }).map(team => (
+                <button key={team.abbr} onClick={() => selectTeam(team)}
+                  className="p-2 rounded-lg border border-gray-200 hover:border-green-400 hover:bg-green-50 text-left transition-colors">
+                  <div className="font-bold text-sm">{team.abbr}</div>
+                  <div className="text-xs text-gray-500 truncate">{team.name}</div>
+                </button>
+              ))}
             </div>
           </div>
         </DialogContent>
@@ -1876,27 +1587,19 @@ function HomeContent() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-red-700">
-              <AlertTriangle className="h-5 w-5" />
-              Confirmar exclusão
+              <AlertTriangle className="h-5 w-5" /> Confirmar exclusão
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
-                <p>
-                  Tem certeza que deseja deletar <strong>{deleteTarget?.name}</strong> e todos os seus <strong>{deleteTarget?.betCount} palpites</strong>?
-                </p>
-                <p className="text-red-600 font-medium">
-                  Esta ação não pode ser desfeita. O participante perderá sua conta e todos os palpites serão removidos permanentemente.
-                </p>
+                <p>Tem certeza que deseja deletar <strong>{deleteTarget?.name}</strong> e todos os seus <strong>{deleteTarget?.betCount} palpites</strong>?</p>
+                <p className="text-red-600 font-medium">Esta ação não pode ser desfeita.</p>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeletePlayer}
-              disabled={deleting}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
+            <AlertDialogAction onClick={handleDeletePlayer} disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 text-white">
               {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
               {deleting ? 'Deletando...' : 'Deletar participante'}
             </AlertDialogAction>
@@ -1904,7 +1607,6 @@ function HomeContent() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Footer */}
       <footer className="bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-auto">
         Painel Administrativo — Bolão Copa do Mundo 2026
       </footer>
@@ -1924,27 +1626,22 @@ function HomeContent() {
   }
 
   switch (currentPage) {
-    case 'bet':
-      return renderBet();
-    case 'admin':
-      return renderAdmin();
-    default:
-      return renderHome();
+    case 'bet': return renderBet();
+    case 'admin': return renderAdmin();
+    default: return renderHome();
   }
 }
 
 export default function Home() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen flex items-center justify-center bg-background">
-          <div className="flex flex-col items-center gap-4">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-muted-foreground text-sm">Carregando...</p>
-          </div>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground text-sm">Carregando...</p>
         </div>
-      }
-    >
+      </div>
+    }>
       <HomeContent />
     </Suspense>
   );
