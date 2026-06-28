@@ -544,7 +544,12 @@ function HomeContent() {
       } else if (res.status === 401) {
         toast({ title: 'Senha incorreta', variant: 'destructive' });
       } else {
-        toast({ title: 'Erro no servidor', variant: 'destructive' });
+        let errorDetail = 'Erro desconhecido';
+        try {
+          const errorData = await res.json();
+          errorDetail = errorData.detail || errorData.error || JSON.stringify(errorData);
+        } catch (_) {}
+        toast({ title: 'Erro no servidor', description: errorDetail, variant: 'destructive' });
       }
     } catch (e) {
       toast({ title: 'Erro de conexão', variant: 'destructive' });
