@@ -28,12 +28,15 @@ export async function GET(request: Request) {
 }
 
 // POST - Configure matches for a knockout phase (admin only)
+// IMPORTANT: This will DELETE existing matches and their bets for the phase!
+// To prevent accidental data loss, requires ?confirm=true when replacing a phase that has bets.
 export async function POST(request: Request) {
   try {
     await ensureMigrated();
 
     const { searchParams } = new URL(request.url);
     const password = searchParams.get('password');
+    const confirm = searchParams.get('confirm') === 'true';
 
     if (!password || password !== ADMIN_PASSWORD) {
       return NextResponse.json({ error: 'Acesso negado. Senha inválida.' }, { status: 401 });
@@ -67,8 +70,32 @@ export async function POST(request: Request) {
       }
     }
 
+    // Check if there are existing matches with bets for this phase
+    const existingMatches = await db.match.findMany({
+      where: { phase },
+      select: { id: true, homeTeam: true, awayTeam: true },
+    });
+
+    if (existingMatches.length > 0) {
+      const existingMatchIds = existingMatches.map(m => m.id);
+      const existingBetCount = await db.bet.count({
+        where: { matchId: { in: existingMatchIds } },
+      });
+
+      if (existingBetCount > 0 && !confirm) {
+        // REFUSE to delete matches that have bets unless explicitly confirmed
+        return NextResponse.json({
+          error: `ESTA FASE TEM ${existingBetCount} APOSTAS! Reconfigurar vai APAGAR todas essas apostas permanentemente.`,
+          existingMatches: existingMatches.map(m => `${m.homeTeam} x ${m.awayTeam}`),
+          betCount: existingBetCount,
+          warning: 'Se tem certeza, adicione &confirm=true na URL. Ex: /api/admin/phase-matches?password=SUA_SENHA&confirm=true',
+          hint: 'Considere usar o endpoint /api/admin/export-json?password=SUA_SENHA para fazer backup antes.',
+        }, { status: 409 });
+      }
+    }
+
     // Delete existing matches for this phase (cascade deletes bets too)
-    await db.match.deleteMany({
+    const deletedMatches = await db.match.deleteMany({
       where: { phase },
     });
 
@@ -88,6 +115,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       message: `${created.count} jogos configurados para a fase "${phase}"`,
+      previousMatchesDeleted: deletedMatches.count,
       count: created.count,
     });
   } catch (error: any) {
