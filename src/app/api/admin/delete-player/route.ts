@@ -22,12 +22,16 @@ export async function DELETE(request: Request) {
     // Verify player exists
     const player = await db.player.findUnique({
       where: { id: playerId },
-      include: { bets: true },
     });
 
     if (!player) {
       return NextResponse.json({ error: 'Participante não encontrado' }, { status: 404 });
     }
+
+    // Count bets before deleting
+    const betCount = await db.bet.count({
+      where: { playerId },
+    });
 
     // Delete all bets first (cascade should handle this, but explicit for safety)
     await db.bet.deleteMany({
@@ -41,8 +45,8 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Participante "${player.name}" e seus ${player.bets.length} palpites foram removidos.`,
-      deletedBets: player.bets.length,
+      message: `Participante "${player.name}" e seus ${betCount} palpites foram removidos.`,
+      deletedBets: betCount,
     });
   } catch (error) {
     console.error('Delete player error:', error);

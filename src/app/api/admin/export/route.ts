@@ -25,31 +25,37 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Acesso negado' }, { status: 401 });
     }
 
-    const matches = await db.match.findMany({
-      orderBy: [{ round: 'asc' }, { matchNum: 'asc' }],
-    });
+    // Fetch separately to avoid "Field match is required" error from orphaned bets
+    const [matches, players, bets] = await Promise.all([
+      db.match.findMany({
+        orderBy: [{ phase: 'asc' }, { round: 'asc' }, { matchNum: 'asc' }],
+      }),
+      db.player.findMany({ orderBy: { name: 'asc' } }),
+      db.bet.findMany(),
+    ]);
 
-    const players = await db.player.findMany({
-      include: {
-        bets: true,
-      },
-      orderBy: { name: 'asc' },
-    });
+    // Build bet lookup per player
+    const betsByPlayer = new Map<string, typeof bets>();
+    for (const bet of bets) {
+      if (!betsByPlayer.has(bet.playerId)) betsByPlayer.set(bet.playerId, []);
+      betsByPlayer.get(bet.playerId)!.push(bet);
+    }
 
     // Build CSV with timestamps
     const headers = [
       'Jogador',
       'Data Registro',
       'Ultima Atualizacao',
-      ...matches.map(m => `${m.round}ª Rod - ${m.homeTeam} x ${m.awayTeam}`),
-      ...matches.map(m => `Horario ${m.round}ª Rod - ${m.homeTeam} x ${m.awayTeam}`),
+      ...matches.map(m => `${m.round ?? '?'}ª Rod - ${m.homeTeam} x ${m.awayTeam}`),
+      ...matches.map(m => `Horario ${m.round ?? '?'}ª Rod - ${m.homeTeam} x ${m.awayTeam}`),
     ];
 
     const rows = players.map(p => {
-      const betMap = new Map(p.bets.map(b => [b.matchId, b]));
+      const playerBets = betsByPlayer.get(p.id) || [];
+      const betMap = new Map(playerBets.map(b => [b.matchId, b]));
 
       // Find last updated bet
-      const filledBets = p.bets.filter(b => b.homeScore !== null || b.awayScore !== null);
+      const filledBets = playerBets.filter(b => b.homeScore !== null || b.awayScore !== null);
       const lastUpdated = filledBets.length > 0
         ? formatDate(new Date(Math.max(...filledBets.map(b => new Date(b.updatedAt).getTime()))))
         : '-';
@@ -61,7 +67,7 @@ export async function GET(request: Request) {
         // Add penalty info for knockout draws
         if (bet.penaltyWinner && bet.homeScore === bet.awayScore && m.phase !== 'groups') {
           const penaltyTeam = bet.penaltyWinner === 'home' ? m.homeTeam : m.awayTeam;
-          result += ` (Pên: ${penaltyTeam})`;
+          result += ` (Pen: ${penaltyTeam})`;
         }
         return result;
       });

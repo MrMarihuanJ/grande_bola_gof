@@ -134,7 +134,22 @@ async function runSetup(password: string) {
     await directClient.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Bet_matchId_idx" ON "Bet"("matchId");`);
     results.push('Indices da tabela Bet criados/verificados');
 
-    // 7. Criar foreign keys
+    // 7. Clean up orphaned bets BEFORE creating foreign keys
+    // Orphaned bets (matchId references a Match that no longer exists) cause:
+    // - "Field match is required to return data, got null instead" in Prisma queries
+    // - Foreign key constraint violation when trying to add Bet_matchId_fkey
+    try {
+      const orphanResult = await directClient.$executeRawUnsafe(
+        `DELETE FROM "Bet" WHERE "matchId" NOT IN (SELECT "id" FROM "Match");`
+      );
+      if (orphanResult > 0) {
+        results.push(`${orphanResult} apostas orfas removidas (matchId invalido)`);
+      }
+    } catch (e: any) {
+      results.push('Limpeza de orfas: ' + e.message);
+    }
+
+    // 8. Criar foreign keys
     // Note: Each SQL command must be in a separate $executeRawUnsafe() call
     // because PostgreSQL does not allow multiple commands in a prepared statement.
     try {
@@ -164,7 +179,7 @@ async function runSetup(password: string) {
       results.push('Foreign key Bet_matchId_fkey: ' + (e.message?.includes('already exists') ? 'ja existe' : e.message));
     }
 
-    // 8. Criar tabela PhaseWinner
+    // 9. Criar tabela PhaseWinner
     await directClient.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "PhaseWinner" (
         "id" TEXT NOT NULL,
