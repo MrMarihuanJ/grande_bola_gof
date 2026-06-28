@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db, runAutoMigration } from '@/lib/db';
+import { db } from '@/lib/db';
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'copa2026admin';
 
@@ -16,9 +16,6 @@ function formatDate(date: Date): string {
 
 export async function GET(request: Request) {
   try {
-    // Ensure DB schema is up-to-date before querying
-    await runAutoMigration();
-
     const { searchParams } = new URL(request.url);
     const password = searchParams.get('password');
 
@@ -86,6 +83,6 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('Export error:', error);
-    return NextResponse.json({ error: 'Failed to export data' }, { status: 500 });
+    return NextResponse.json({ error: 'Erro ao exportar dados' }, { status: 500 });
   }
 }
