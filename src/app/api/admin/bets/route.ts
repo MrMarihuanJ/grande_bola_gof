@@ -1,13 +1,10 @@
 import { NextResponse } from 'next/server';
-import { db, runAutoMigration } from '@/lib/db';
+import { db } from '@/lib/db';
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'copa2026admin';
 
 export async function GET(request: Request) {
   try {
-    // Ensure DB schema is up-to-date before querying
-    await runAutoMigration();
-
     const { searchParams } = new URL(request.url);
     const password = searchParams.get('password');
 
@@ -30,12 +27,15 @@ export async function GET(request: Request) {
     return NextResponse.json(players);
   } catch (error: any) {
     console.error('Admin get bets error:', error);
+    const message = error?.message || 'Unknown error';
+    const isMissingColumn = message.includes('does not exist') || message.includes('penaltyWinner');
+
     return NextResponse.json({
-      error: 'Failed to fetch admin data',
-      detail: error?.message || 'Unknown error',
-      hint: error?.message?.includes('penaltyWinner')
-        ? 'Run /api/migrate to add the missing column, then try again.'
-        : undefined,
+      error: 'Erro ao carregar dados do administrador',
+      detail: message,
+      hint: isMissingColumn
+        ? 'O banco de dados precisa de atualização. Acesse /api/setup?password=SUA_SENHA para atualizar o esquema.'
+        : 'Verifique as variáveis de ambiente DATABASE_URL e DIRECT_URL na Vercel.',
     }, { status: 500 });
   }
 }
