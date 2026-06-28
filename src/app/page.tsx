@@ -133,7 +133,7 @@ const TEAMS = [
   { abbr: 'IRQ', name: 'Iraque' },
   { abbr: 'NOR', name: 'Noruega' },
   { abbr: 'ARG', name: 'Argentina' },
-  { abbr: 'AGL', name: 'Angola' },
+  { abbr: 'AGL', name: 'Argélia' },
   { abbr: 'AUT', name: 'Áustria' },
   { abbr: 'JOR', name: 'Jordânia' },
   { abbr: 'POR', name: 'Portugal' },
