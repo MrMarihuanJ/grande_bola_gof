@@ -253,6 +253,18 @@ function HomeContent() {
     adminParam !== null ? 'admin' : 'home'
   );
 
+  // Auto-migrate database on initial load (adds missing columns like penaltyWinner)
+  useEffect(() => {
+    const autoMigrate = async () => {
+      try {
+        await fetch('/api/migrate');
+      } catch (e) {
+        console.warn('Auto-migration failed (non-critical):', e);
+      }
+    };
+    autoMigrate();
+  }, []);
+
   // Fetch ALL matches on initial load
   useEffect(() => {
     const fetchAllMatches = async () => {
@@ -800,13 +812,14 @@ function HomeContent() {
     }
   };
 
-  // Save phase winners (only save non-empty values, delete empty ones)
+  // Save phase winners (save non-empty values, delete empty ones)
   const savePhaseWinners = async () => {
     setAdminWinnerSaving(true);
     try {
       const entries = Array.from(adminPhaseWinners.entries());
       for (const [phase, winnerName] of entries) {
         if (winnerName.trim()) {
+          // Save non-empty winner
           const res = await fetch(`/api/admin/phase-winner?password=${encodeURIComponent(adminPassword)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -815,6 +828,16 @@ function HomeContent() {
           if (!res.ok) {
             const error = await res.json();
             toast({ title: 'Erro ao salvar ganhador', description: error.error || 'Tente novamente.', variant: 'destructive' });
+            return;
+          }
+        } else {
+          // Delete empty winner
+          const res = await fetch(`/api/admin/phase-winner?password=${encodeURIComponent(adminPassword)}&phase=${encodeURIComponent(phase)}`, {
+            method: 'DELETE',
+          });
+          if (!res.ok) {
+            const error = await res.json();
+            toast({ title: 'Erro ao remover ganhador', description: error.error || 'Tente novamente.', variant: 'destructive' });
             return;
           }
         }
