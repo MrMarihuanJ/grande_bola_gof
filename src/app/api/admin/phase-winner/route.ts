@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server';
-import { db, runAutoMigration } from '@/lib/db';
+import { db } from '@/lib/db';
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'copa2026admin';
 
 // GET - Return all phase winners
 export async function GET(request: Request) {
   try {
-    await runAutoMigration();
     const { searchParams } = new URL(request.url);
     const password = searchParams.get('password');
 
@@ -28,7 +27,6 @@ export async function GET(request: Request) {
 // POST - Set winner for a phase (upsert)
 export async function POST(request: Request) {
   try {
-    await runAutoMigration();
     const { searchParams } = new URL(request.url);
     const password = searchParams.get('password');
 
@@ -63,7 +61,6 @@ export async function POST(request: Request) {
 // DELETE - Remove winner for a phase
 export async function DELETE(request: Request) {
   try {
-    await runAutoMigration();
     const { searchParams } = new URL(request.url);
     const password = searchParams.get('password');
 
@@ -71,8 +68,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Acesso negado. Senha inválida.' }, { status: 401 });
     }
 
-    const { searchParams: params } = new URL(request.url);
-    const phase = params.get('phase');
+    const phase = searchParams.get('phase');
 
     if (!phase) {
       return NextResponse.json({ error: 'phase parameter is required' }, { status: 400 });
