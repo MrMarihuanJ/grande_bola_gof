@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server';
-import { db, runAutoMigration } from '@/lib/db';
+import { db } from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
-    // Ensure DB schema is up-to-date before querying
-    await runAutoMigration();
-
     const { searchParams } = new URL(request.url);
     const playerId = searchParams.get('playerId');
 
@@ -28,9 +25,6 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    // Ensure DB schema is up-to-date before writing
-    await runAutoMigration();
-
     const { playerId, bets } = await request.json();
 
     if (!playerId || !bets || !Array.isArray(bets)) {
