@@ -253,21 +253,18 @@ function HomeContent() {
     adminParam !== null ? 'admin' : 'home'
   );
 
-  // Auto-migrate database on initial load (adds missing columns like penaltyWinner)
+  // Auto-migrate + fetch ALL matches on initial load
+  // Migration must complete BEFORE any queries that touch the Bet table
   useEffect(() => {
-    const autoMigrate = async () => {
+    const initApp = async () => {
+      // Step 1: Auto-migrate (ensure all columns exist)
       try {
         await fetch('/api/migrate');
       } catch (e) {
-        console.warn('Auto-migration failed (non-critical):', e);
+        console.warn('Auto-migration failed (non-critical, server-side migration should handle it):', e);
       }
-    };
-    autoMigrate();
-  }, []);
 
-  // Fetch ALL matches on initial load
-  useEffect(() => {
-    const fetchAllMatches = async () => {
+      // Step 2: Fetch matches
       try {
         const res = await fetch('/api/matches?all=true');
         if (res.ok) {
@@ -291,13 +288,8 @@ function HomeContent() {
       } finally {
         setInitialLoading(false);
       }
-    };
-    fetchAllMatches();
-  }, []);
 
-  // Fetch phase winners
-  useEffect(() => {
-    const fetchWinners = async () => {
+      // Step 3: Fetch phase winners (can run after matches, doesn't depend on Bet)
       try {
         const res = await fetch('/api/phase-winners');
         if (res.ok) {
@@ -310,7 +302,7 @@ function HomeContent() {
         console.error('Failed to fetch phase winners:', e);
       }
     };
-    fetchWinners();
+    initApp();
   }, []);
 
   // Fetch player data when on bet page
