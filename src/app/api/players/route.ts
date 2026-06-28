@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, ensureMigrated } from '@/lib/db';
 import crypto from 'crypto';
 
 // POST - Registrar ou logar pelo nome
 export async function POST(request: Request) {
   try {
+    await ensureMigrated();
     const { name } = await request.json();
 
     if (!name || typeof name !== 'string' || name.trim().length < 2) {
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
 // GET - Buscar jogador por token ou por nome
 export async function GET(request: Request) {
   try {
+    await ensureMigrated();
     const { searchParams } = new URL(request.url);
     const token = searchParams.get('token');
     const name = searchParams.get('name');

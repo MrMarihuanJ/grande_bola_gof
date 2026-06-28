@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, ensureMigrated } from '@/lib/db';
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'copa2026admin';
 
 export async function GET(request: Request) {
   try {
+    // Ensure DB schema is up-to-date before querying
+    await ensureMigrated();
+
     const { searchParams } = new URL(request.url);
     const password = searchParams.get('password');
 
@@ -28,7 +31,7 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error('Admin get bets error:', error);
     const message = error?.message || 'Unknown error';
-    const isMissingColumn = message.includes('does not exist') || message.includes('penaltyWinner');
+    const isMissingColumn = message.includes('does not exist');
 
     return NextResponse.json({
       error: 'Erro ao carregar dados do administrador',

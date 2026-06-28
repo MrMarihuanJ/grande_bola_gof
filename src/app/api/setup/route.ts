@@ -135,22 +135,30 @@ async function runSetup(password: string) {
     results.push('Indices da tabela Bet criados/verificados');
 
     // 7. Criar foreign keys
+    // Note: Each SQL command must be in a separate $executeRawUnsafe() call
+    // because PostgreSQL does not allow multiple commands in a prepared statement.
     try {
-      await directClient.$executeRawUnsafe(`
-        ALTER TABLE "Bet" DROP CONSTRAINT IF EXISTS "Bet_playerId_fkey";
-        ALTER TABLE "Bet" ADD CONSTRAINT "Bet_playerId_fkey"
-        FOREIGN KEY ("playerId") REFERENCES "Player"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-      `);
+      await directClient.$executeRawUnsafe(
+        `ALTER TABLE "Bet" DROP CONSTRAINT IF EXISTS "Bet_playerId_fkey";`
+      );
+    } catch (_) { /* constraint may not exist */ }
+    try {
+      await directClient.$executeRawUnsafe(
+        `ALTER TABLE "Bet" ADD CONSTRAINT "Bet_playerId_fkey" FOREIGN KEY ("playerId") REFERENCES "Player"("id") ON DELETE CASCADE ON UPDATE CASCADE;`
+      );
       results.push('Foreign key Bet_playerId_fkey criada');
     } catch (e: any) {
       results.push('Foreign key Bet_playerId_fkey: ' + (e.message?.includes('already exists') ? 'ja existe' : e.message));
     }
     try {
-      await directClient.$executeRawUnsafe(`
-        ALTER TABLE "Bet" DROP CONSTRAINT IF EXISTS "Bet_matchId_fkey";
-        ALTER TABLE "Bet" ADD CONSTRAINT "Bet_matchId_fkey"
-        FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-      `);
+      await directClient.$executeRawUnsafe(
+        `ALTER TABLE "Bet" DROP CONSTRAINT IF EXISTS "Bet_matchId_fkey";`
+      );
+    } catch (_) { /* constraint may not exist */ }
+    try {
+      await directClient.$executeRawUnsafe(
+        `ALTER TABLE "Bet" ADD CONSTRAINT "Bet_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match"("id") ON DELETE CASCADE ON UPDATE CASCADE;`
+      );
       results.push('Foreign key Bet_matchId_fkey criada');
     } catch (e: any) {
       results.push('Foreign key Bet_matchId_fkey: ' + (e.message?.includes('already exists') ? 'ja existe' : e.message));

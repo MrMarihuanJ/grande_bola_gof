@@ -2,22 +2,28 @@ import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
-  __bolao_db_ready: Promise<void> | undefined
 }
 
+// Create PrismaClient normally - no Proxy
+export const db =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  })
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
+
 // ========== AUTO-MIGRATION ==========
-// Runs once per cold start to ensure the database schema matches the Prisma schema.
-// This is critical because Prisma Client will SELECT columns that may not exist yet
-// in the database after a schema change (e.g., adding penaltyWinner to Bet).
+// Ensures the database schema matches the Prisma schema.
+// Uses a shared promise so migration runs exactly once, even across concurrent requests.
 
 const MIGRATION_KEY = '__bolao_db_migrated__';
 
-async function runAutoMigration() {
-  // If already migrated in this process, return immediately
+async function runMigration() {
+  // Already migrated in this process
   if ((globalThis as any)[MIGRATION_KEY]) return;
 
   try {
-    // Use DIRECT_URL for DDL operations (bypass pgbouncer)
     const url = process.env.DIRECT_URL || process.env.DATABASE_URL;
     if (!url) {
       console.warn('[auto-migrate] No database URL found, skipping migration');
@@ -74,59 +80,24 @@ async function runAutoMigration() {
   } catch (error) {
     console.error('[auto-migrate] Migration failed:', error);
     // Don't throw — the app should still try to work
+    // If the migration fails, queries might also fail, but at least the app won't crash on startup
   }
 }
 
-// Singleton promise that ensures migration runs exactly once before first DB access
-function getDbReadyPromise(): Promise<void> {
-  if (!globalForPrisma.__bolao_db_ready) {
-    globalForPrisma.__bolao_db_ready = runAutoMigration();
+// Shared promise: ensures migration runs exactly once across all concurrent requests
+// The first caller triggers the migration, subsequent callers await the same promise
+let _migrationPromise: Promise<void> | null = null;
+
+export function ensureMigrated(): Promise<void> {
+  if (!_migrationPromise) {
+    _migrationPromise = runMigration();
   }
-  return globalForPrisma.__bolao_db_ready;
+  return _migrationPromise;
 }
 
-// Lazy PrismaClient getter - ensures migration has completed before first use
-// This solves the race condition where db was created immediately but migration
-// was fire-and-forget, causing "column does not exist" errors on cold starts.
-let _db: PrismaClient | undefined;
+// Also export the raw function for backward compatibility
+export { runMigration as runAutoMigration };
 
-function getDb(): PrismaClient {
-  if (!_db) {
-    _db = globalForPrisma.prisma ??
-      new PrismaClient({
-        log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-      });
-    if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = _db;
-  }
-  return _db;
-}
-
-// Export a Proxy that:
-// 1. Awaits migration before any Prisma operation
-// 2. Delegates all property access to the real PrismaClient
-// This ensures every API route automatically waits for migration without
-// needing explicit `await runAutoMigration()` calls.
-export const db = new Proxy({} as PrismaClient, {
-  get(_target, prop, receiver) {
-    // Allow typeof checks and non-function property access to pass through
-    const realDb = getDb();
-    const value = Reflect.get(realDb, prop, receiver);
-
-    // If the property is a function (like $queryRaw, user.findMany, etc.),
-    // wrap it to ensure migration completes first
-    if (typeof value === 'function') {
-      return async function (...args: any[]) {
-        await getDbReadyPromise();
-        return value.apply(realDb, args);
-      };
-    }
-
-    // For non-function properties (like $connect, $disconnect as objects, etc.)
-    // wrap them with migration check too
-    return value;
-  },
-});
-
-// Also export runAutoMigration for explicit use in routes that want
-// to await migration at the top level (kept for backward compatibility)
-export { runAutoMigration, getDbReadyPromise };
+// DO NOT fire-and-forget migration on module load anymore.
+// Instead, routes must call `await ensureMigrated()` before using `db`.
+// This prevents race conditions where queries run before migration completes.

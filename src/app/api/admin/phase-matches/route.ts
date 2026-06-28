@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, ensureMigrated } from '@/lib/db';
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'copa2026admin';
 
 // GET - Return matches for a specific phase
 export async function GET(request: Request) {
   try {
+    await ensureMigrated();
+
     const { searchParams } = new URL(request.url);
     const phase = searchParams.get('phase');
 
@@ -28,6 +30,8 @@ export async function GET(request: Request) {
 // POST - Configure matches for a knockout phase (admin only)
 export async function POST(request: Request) {
   try {
+    await ensureMigrated();
+
     const { searchParams } = new URL(request.url);
     const password = searchParams.get('password');
 

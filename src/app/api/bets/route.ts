@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, ensureMigrated } from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
+    await ensureMigrated();
     const { searchParams } = new URL(request.url);
     const playerId = searchParams.get('playerId');
 
@@ -25,6 +26,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await ensureMigrated();
     const { playerId, bets } = await request.json();
 
     if (!playerId || !bets || !Array.isArray(bets)) {

@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, ensureMigrated } from '@/lib/db';
 
 // GET - Public endpoint to return all phase winners (no auth needed)
 export async function GET() {
   try {
+    await ensureMigrated();
     const winners = await db.phaseWinner.findMany({
       orderBy: { phase: 'asc' },
     });

@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, ensureMigrated } from '@/lib/db';
 
 export async function GET(request: Request) {
   try {
+    await ensureMigrated();
     const { searchParams } = new URL(request.url);
     const phase = searchParams.get('phase');
     const all = searchParams.get('all');

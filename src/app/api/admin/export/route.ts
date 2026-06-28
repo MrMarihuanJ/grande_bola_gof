@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, ensureMigrated } from '@/lib/db';
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'copa2026admin';
 
@@ -16,6 +16,8 @@ function formatDate(date: Date): string {
 
 export async function GET(request: Request) {
   try {
+    await ensureMigrated();
+
     const { searchParams } = new URL(request.url);
     const password = searchParams.get('password');
 
