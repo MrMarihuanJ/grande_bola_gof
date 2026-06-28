@@ -108,12 +108,25 @@ async function runSetup(password: string) {
         "matchId" TEXT NOT NULL,
         "homeScore" INTEGER,
         "awayScore" INTEGER,
+        "penaltyWinner" TEXT,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "Bet_pkey" PRIMARY KEY ("id")
       );
     `);
     results.push('Tabela Bet criada/verificada');
+
+    // Add penaltyWinner column if not exists (for existing databases)
+    try {
+      await directClient.$executeRawUnsafe(`ALTER TABLE "Bet" ADD COLUMN IF NOT EXISTS "penaltyWinner" TEXT;`);
+      results.push('Coluna penaltyWinner adicionada/verificada na tabela Bet');
+    } catch (e: any) {
+      if (e.message?.includes('already exists') || e.message?.includes('duplicate')) {
+        results.push('Coluna penaltyWinner já existe na tabela Bet');
+      } else {
+        results.push('Coluna penaltyWinner: ' + e.message);
+      }
+    }
 
     // 6. Criar índices e unique da tabela Bet
     await directClient.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "Bet_playerId_matchId_key" ON "Bet"("playerId", "matchId");`);

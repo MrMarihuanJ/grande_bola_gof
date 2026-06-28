@@ -60,6 +60,15 @@ export async function POST(request: Request) {
           );
         }
       }
+      // Validate penaltyWinner — must be "home" or "away" (or null/undefined)
+      if (bet.penaltyWinner !== null && bet.penaltyWinner !== undefined) {
+        if (bet.penaltyWinner !== 'home' && bet.penaltyWinner !== 'away') {
+          return NextResponse.json(
+            { error: `penaltyWinner inválido para o jogo ${bet.matchId}. Use "home" ou "away".` },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     // Upsert bets
@@ -67,6 +76,7 @@ export async function POST(request: Request) {
     for (const bet of bets) {
       const homeScore = bet.homeScore !== null && bet.homeScore !== undefined ? Number(bet.homeScore) : null;
       const awayScore = bet.awayScore !== null && bet.awayScore !== undefined ? Number(bet.awayScore) : null;
+      const penaltyWinner = bet.penaltyWinner || null;
 
       const result = await db.bet.upsert({
         where: {
@@ -78,12 +88,14 @@ export async function POST(request: Request) {
         update: {
           homeScore,
           awayScore,
+          penaltyWinner,
         },
         create: {
           playerId,
           matchId: bet.matchId,
           homeScore,
           awayScore,
+          penaltyWinner,
         },
       });
       results.push(result);

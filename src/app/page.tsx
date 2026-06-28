@@ -43,6 +43,7 @@ interface Bet {
   matchId: string;
   homeScore: number | null;
   awayScore: number | null;
+  penaltyWinner: string | null; // "home" or "away" — only for knockout phases when tied
 }
 
 interface Player {
@@ -202,7 +203,7 @@ function HomeContent() {
   // Data state
   const [matches, setMatches] = useState<Match[]>([]);
   const [player, setPlayer] = useState<Player | null>(null);
-  const [bets, setBets] = useState<Map<string, { homeScore: string; awayScore: string }>>(new Map());
+  const [bets, setBets] = useState<Map<string, { homeScore: string; awayScore: string; penaltyWinner: string }>>(new Map());
   const [savedBets, setSavedBets] = useState<Map<string, { homeScore: number | null; awayScore: number | null; updatedAt: string }>>(new Map());
 
   // Form state
@@ -319,11 +320,12 @@ function HomeContent() {
           });
           setSavedBets(betsMap);
 
-          const inputMap = new Map<string, { homeScore: string; awayScore: string }>();
+          const inputMap = new Map<string, { homeScore: string; awayScore: string; penaltyWinner: string }>();
           betsData.forEach((bet: any) => {
             inputMap.set(bet.matchId, {
               homeScore: bet.homeScore !== null ? String(bet.homeScore) : '',
               awayScore: bet.awayScore !== null ? String(bet.awayScore) : '',
+              penaltyWinner: bet.penaltyWinner || '',
             });
           });
           setBets(inputMap);
@@ -444,7 +446,8 @@ function HomeContent() {
           return;
         }
 
-        betList.push({ matchId: match.id, homeScore: hs, awayScore: as_ });
+        const pw = bet.penaltyWinner || null;
+        betList.push({ matchId: match.id, homeScore: hs, awayScore: as_, penaltyWinner: pw });
       }
     });
 
@@ -487,13 +490,34 @@ function HomeContent() {
   };
 
   // Update bet input
-  const updateBet = (matchId: string, field: 'homeScore' | 'awayScore', value: string) => {
-    const sanitized = value.replace(/[^0-9]/g, '').slice(0, 2);
-    setBets(prev => {
-      const newMap = new Map(prev);
-      newMap.set(matchId, { ...prev.get(matchId) || { homeScore: '', awayScore: '' }, [field]: sanitized });
-      return newMap;
-    });
+  const updateBet = (matchId: string, field: 'homeScore' | 'awayScore' | 'penaltyWinner', value: string, matchPhase?: string) => {
+    if (field === 'homeScore' || field === 'awayScore') {
+      const sanitized = value.replace(/[^0-9]/g, '').slice(0, 2);
+      setBets(prev => {
+        const newMap = new Map(prev);
+        const current = prev.get(matchId) || { homeScore: '', awayScore: '', penaltyWinner: '' };
+        const updated = { ...current, [field]: sanitized };
+
+        // Auto-clear penaltyWinner if scores are no longer tied (knockout phases only)
+        if (matchPhase && matchPhase !== 'groups') {
+          const hs = field === 'homeScore' ? sanitized : current.homeScore;
+          const as_ = field === 'awayScore' ? sanitized : current.awayScore;
+          if (hs !== '' && as_ !== '' && hs !== as_) {
+            updated.penaltyWinner = '';
+          }
+        }
+
+        newMap.set(matchId, updated);
+        return newMap;
+      });
+    } else {
+      // penaltyWinner
+      setBets(prev => {
+        const newMap = new Map(prev);
+        newMap.set(matchId, { ...prev.get(matchId) || { homeScore: '', awayScore: '', penaltyWinner: '' }, penaltyWinner: value });
+        return newMap;
+      });
+    }
     setHasChanges(true);
   };
 
@@ -946,42 +970,74 @@ function HomeContent() {
 
   // Render a match row
   const renderMatchRow = (match: Match) => {
-    const bet = bets.get(match.id) || { homeScore: '', awayScore: '' };
+    const bet = bets.get(match.id) || { homeScore: '', awayScore: '', penaltyWinner: '' };
     const savedBet = savedBets.get(match.id);
     const isSaved = savedBet !== undefined && (savedBet.homeScore !== null || savedBet.awayScore !== null);
     const isFilled = bet.homeScore !== '' || bet.awayScore !== '';
+    const isKnockout = match.phase !== 'groups';
+    const isDraw = bet.homeScore !== '' && bet.awayScore !== '' && bet.homeScore === bet.awayScore;
+    const showPenaltyField = isKnockout && isDraw;
 
     return (
-      <div key={match.id} className={`px-4 py-3 flex items-center gap-2 md:gap-4 ${isFilled ? 'bg-green-50/50' : ''}`}>
-        <div className="flex-1 text-right">
-          <span className="font-bold text-sm md:text-base text-gray-800">{match.homeTeam}</span>
-          <span className="hidden md:inline text-xs text-gray-500 ml-1">({match.homeName})</span>
-          <span className="md:hidden block text-xs text-gray-500">{match.homeName}</span>
+      <div key={match.id} className={`px-4 py-3 ${isFilled ? 'bg-green-50/50' : ''}`}>
+        <div className="flex items-center gap-2 md:gap-4">
+          <div className="flex-1 text-right">
+            <span className="font-bold text-sm md:text-base text-gray-800">{match.homeTeam}</span>
+            <span className="hidden md:inline text-xs text-gray-500 ml-1">({match.homeName})</span>
+            <span className="md:hidden block text-xs text-gray-500">{match.homeName}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Input type="text" inputMode="numeric" pattern="[0-9]*" min={0} max={30}
+              className="w-14 h-10 text-center text-lg font-bold border-2 border-gray-200 focus:border-green-500 focus:ring-green-500"
+              placeholder="-" value={bet.homeScore}
+              onChange={(e) => updateBet(match.id, 'homeScore', e.target.value, match.phase)}
+              aria-label={`Placar ${match.homeTeam}`} />
+            <span className="text-lg font-bold text-gray-400">×</span>
+            <Input type="text" inputMode="numeric" pattern="[0-9]*" min={0} max={30}
+              className="w-14 h-10 text-center text-lg font-bold border-2 border-gray-200 focus:border-green-500 focus:ring-green-500"
+              placeholder="-" value={bet.awayScore}
+              onChange={(e) => updateBet(match.id, 'awayScore', e.target.value, match.phase)}
+              aria-label={`Placar ${match.awayTeam}`} />
+          </div>
+          <div className="flex-1 text-left">
+            <span className="font-bold text-sm md:text-base text-gray-800">{match.awayTeam}</span>
+            <span className="hidden md:inline text-xs text-gray-500 ml-1">({match.awayName})</span>
+            <span className="md:hidden block text-xs text-gray-500">{match.awayName}</span>
+          </div>
+          {isSaved && (
+            <div className="shrink-0 flex flex-col items-center">
+              <Check className="h-4 w-4 text-green-500" />
+              <span className="text-[8px] text-gray-400">
+                {new Date(savedBets.get(match.id)?.updatedAt || '').toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Input type="text" inputMode="numeric" pattern="[0-9]*" min={0} max={30}
-            className="w-14 h-10 text-center text-lg font-bold border-2 border-gray-200 focus:border-green-500 focus:ring-green-500"
-            placeholder="-" value={bet.homeScore}
-            onChange={(e) => updateBet(match.id, 'homeScore', e.target.value)}
-            aria-label={`Placar ${match.homeTeam}`} />
-          <span className="text-lg font-bold text-gray-400">×</span>
-          <Input type="text" inputMode="numeric" pattern="[0-9]*" min={0} max={30}
-            className="w-14 h-10 text-center text-lg font-bold border-2 border-gray-200 focus:border-green-500 focus:ring-green-500"
-            placeholder="-" value={bet.awayScore}
-            onChange={(e) => updateBet(match.id, 'awayScore', e.target.value)}
-            aria-label={`Placar ${match.awayTeam}`} />
-        </div>
-        <div className="flex-1 text-left">
-          <span className="font-bold text-sm md:text-base text-gray-800">{match.awayTeam}</span>
-          <span className="hidden md:inline text-xs text-gray-500 ml-1">({match.awayName})</span>
-          <span className="md:hidden block text-xs text-gray-500">{match.awayName}</span>
-        </div>
-        {isSaved && (
-          <div className="shrink-0 flex flex-col items-center">
-            <Check className="h-4 w-4 text-green-500" />
-            <span className="text-[8px] text-gray-400">
-              {new Date(savedBets.get(match.id)?.updatedAt || '').toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-            </span>
+        {/* Penalty winner selector — only for knockout phases when scores are tied */}
+        {showPenaltyField && (
+          <div className="mt-2 flex items-center gap-2 justify-center">
+            <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">Pênaltis:</span>
+            <button
+              onClick={() => updateBet(match.id, 'penaltyWinner', 'home')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-colors ${
+                bet.penaltyWinner === 'home'
+                  ? 'bg-emerald-500 text-white border-emerald-500 shadow-md'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'
+              }`}
+            >
+              {match.homeTeam} 🏆
+            </button>
+            <span className="text-gray-400 text-xs">ou</span>
+            <button
+              onClick={() => updateBet(match.id, 'penaltyWinner', 'away')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-colors ${
+                bet.penaltyWinner === 'away'
+                  ? 'bg-emerald-500 text-white border-emerald-500 shadow-md'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'
+              }`}
+            >
+              {match.awayTeam} 🏆
+            </button>
           </div>
         )}
       </div>
@@ -1387,6 +1443,11 @@ function HomeContent() {
                             const betsByRound = [1, 2, 3].map(round =>
                               p.bets.filter((b: any) => b.match.round === round).sort((a: any, b: any) => a.match.matchNum - b.match.matchNum)
                             );
+                            const betsByPhase = KNOCKOUT_PHASES.map(phase => ({
+                              key: phase.key,
+                              label: phase.label,
+                              bets: p.bets.filter((b: any) => b.match.phase === phase.key).sort((a: any, b: any) => a.match.matchNum - b.match.matchNum),
+                            })).filter(g => g.bets.length > 0);
                             const lastUpdated = filledBets.length > 0
                               ? filledBets.reduce((latest: Date, b: any) => { const d = new Date(b.updatedAt); return d > latest ? d : latest; }, new Date(0))
                               : null;
@@ -1427,6 +1488,32 @@ function HomeContent() {
                                             <div className="font-bold text-gray-800">
                                               {bet.homeScore !== null && bet.awayScore !== null ? `${bet.homeScore}×${bet.awayScore}` : '—'}
                                             </div>
+                                            {bet.penaltyWinner && bet.homeScore === bet.awayScore && bet.match.phase !== 'groups' && (
+                                              <div className="text-[9px] text-amber-600 font-semibold">
+                                                Pên: {bet.penaltyWinner === 'home' ? bet.match.homeTeam : bet.match.awayTeam}
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {/* Knockout phase bets */}
+                                  {betsByPhase.map(group => (
+                                    <div key={group.key}>
+                                      <p className="text-xs font-semibold text-amber-700 mb-1">{group.label}</p>
+                                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-1">
+                                        {group.bets.map((bet: any) => (
+                                          <div key={bet.id} className="bg-amber-50 rounded p-1.5 text-center text-xs">
+                                            <div className="text-[10px] text-gray-400 truncate">{bet.match.homeTeam} v {bet.match.awayTeam}</div>
+                                            <div className="font-bold text-gray-800">
+                                              {bet.homeScore !== null && bet.awayScore !== null ? `${bet.homeScore}×${bet.awayScore}` : '—'}
+                                            </div>
+                                            {bet.penaltyWinner && bet.homeScore === bet.awayScore && (
+                                              <div className="text-[9px] text-amber-600 font-semibold">
+                                                Pên: {bet.penaltyWinner === 'home' ? bet.match.homeTeam : bet.match.awayTeam}
+                                              </div>
+                                            )}
                                           </div>
                                         ))}
                                       </div>

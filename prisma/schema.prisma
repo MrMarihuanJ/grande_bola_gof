@@ -39,15 +39,16 @@ model Player {
 }
 
 model Bet {
-  id         String   @id @default(cuid())
-  playerId   String
-  matchId    String
-  homeScore  Int?
-  awayScore  Int?
-  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  match      Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id             String   @id @default(cuid())
+  playerId       String
+  matchId        String
+  homeScore      Int?
+  awayScore      Int?
+  penaltyWinner  String?  // "home" or "away" — only for knockout phases when scores are tied
+  player         Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@unique([playerId, matchId])
   @@index([playerId])

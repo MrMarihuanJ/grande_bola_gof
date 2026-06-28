@@ -55,7 +55,13 @@ export async function GET(request: Request) {
       const scores = matches.map(m => {
         const bet = betMap.get(m.id);
         if (!bet || (bet.homeScore === null && bet.awayScore === null)) return '-';
-        return `${bet.homeScore ?? '-'}x${bet.awayScore ?? '-'}`;
+        let result = `${bet.homeScore ?? '-'}x${bet.awayScore ?? '-'}`;
+        // Add penalty info for knockout draws
+        if (bet.penaltyWinner && bet.homeScore === bet.awayScore && m.phase !== 'groups') {
+          const penaltyTeam = bet.penaltyWinner === 'home' ? m.homeTeam : m.awayTeam;
+          result += ` (Pên: ${penaltyTeam})`;
+        }
+        return result;
       });
 
       const timestamps = matches.map(m => {
