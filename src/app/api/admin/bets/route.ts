@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db, runAutoMigration } from '@/lib/db';
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'copa2026admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Copa2026admin';
 
 export async function GET(request: Request) {
   try {
