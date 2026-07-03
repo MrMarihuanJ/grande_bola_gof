@@ -120,3 +120,65 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ========== Easter Egg Animations ========== */
+
+/* Float-up animation for party mode emojis */
+@keyframes float-up {
+  0% {
+    transform: translateY(100vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-20vh) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.animate-float-up {
+  animation: float-up 3s ease-out forwards;
+}
+
+/* Fade-in animation for Konami overlay */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+/* Rainbow animation for party mode footer */
+@keyframes rainbow {
+  0% { background-color: #ff0000; }
+  16% { background-color: #ff8800; }
+  33% { background-color: #ffff00; }
+  50% { background-color: #00cc00; }
+  66% { background-color: #0066ff; }
+  83% { background-color: #8800ff; }
+  100% { background-color: #ff0000; }
+}
+
+.animate-rainbow {
+  animation: rainbow 2s linear infinite;
+  color: white !important;
+  font-weight: bold;
+}
+
+/* Shimmer animation for progress bar */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Wiggle animation for secret interactions */
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-10deg); }
+  75% { transform: rotate(10deg); }
+}
+
+.animate-wiggle {
+  animation: wiggle 0.5s ease-in-out;
+}

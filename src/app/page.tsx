@@ -191,11 +191,29 @@ const TROPHY_TOOLTIP_PHRASES = [
 ];
 
 // Audio playback helper
+const audioRef = typeof window !== 'undefined' ? { current: null as HTMLAudioElement | null } : { current: null as HTMLAudioElement | null };
+
 const playAudio = (src: string) => {
   try {
+    // Stop any currently playing audio first
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
     const audio = new Audio(src);
+    audioRef.current = audio;
     audio.play().catch(() => {});
   } catch {}
+};
+
+// Resolve audio source path from a base name or full path
+const resolveAudioSrc = (audioSrc: string | null): string => {
+  if (!audioSrc) return '/winner.mp3';
+  // If it's already a full path (starts with /), use as-is for backward compat
+  if (audioSrc.startsWith('/')) return audioSrc;
+  // Otherwise it's a base name from audios.json → prepend /win/ and append .mp3
+  return `/win/${audioSrc}.mp3`;
 };
 
 // Generate a World Cup themed gradient for team badges
@@ -302,6 +320,22 @@ function HomeContent() {
 
   // All bets complete state
   const [showAllBetsComplete, setShowAllBetsComplete] = useState(false);
+
+  // ========== Easter Egg States ==========
+  // Konami Code
+  const [konamiSequence, setKonamiSequence] = useState<string[]>([]);
+  const [konamiActivated, setKonamiActivated] = useState(false);
+  const [konamiDismissed, setKonamiDismissed] = useState(false);
+
+  // Secret click counter on trophy
+  const [trophyClickCount, setTrophyClickCount] = useState(0);
+  const [showTrophySecret, setShowTrophySecret] = useState(false);
+
+  // Double-click footer for party mode
+  const [partyMode, setPartyMode] = useState(false);
+
+  // Konami Code sequence: ↑ ↑ ↓ ↓ ← → ← → B A
+  const KONAMI_CODE = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
 
   // Read URL params
   const adminParam = searchParams.get('admin');
@@ -411,6 +445,62 @@ function HomeContent() {
     };
     fetchPlayerData();
   }, [currentPage, player]);
+
+  // ========== Konami Code Easter Egg ==========
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const key = e.key === 'b' ? 'b' : e.key === 'a' ? 'a' : e.key;
+      setKonamiSequence(prev => {
+        const next = [...prev, key];
+        // Keep only the last 10 keys (length of Konami code)
+        if (next.length > KONAMI_CODE.length) next.shift();
+        // Check if the sequence matches
+        if (next.length === KONAMI_CODE.length && next.every((k, i) => k === KONAMI_CODE[i])) {
+          setKonamiActivated(true);
+          playAudio('/winner.mp3');
+          // Auto-dismiss after 8 seconds
+          setTimeout(() => setKonamiDismissed(true), 8000);
+        }
+        return next;
+      });
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // ========== Trophy Secret Click Easter Egg ==========
+  const handleTrophyClick = () => {
+    const newCount = trophyClickCount + 1;
+    setTrophyClickCount(newCount);
+    if (newCount >= 7) {
+      setShowTrophySecret(true);
+      playAudio('/winner.mp3');
+      toast({
+        title: '🏆 Segredo desbloqueado!',
+        description: pickRandom([
+          'Você encontrou o troféu secreto! O Ney tá orgulhoso! 🇧🇷',
+          '7 cliques no troféu! Você é mais persistente que oVAR! ⚽',
+          'Desbloqueou! Agora vai assistir o jogo! 📺',
+        ]),
+      });
+      setTrophyClickCount(0);
+      setTimeout(() => setShowTrophySecret(false), 5000);
+    }
+  };
+
+  // ========== Footer Party Mode Easter Egg ==========
+  const handleFooterDoubleClick = () => {
+    setPartyMode(prev => !prev);
+    if (!partyMode) {
+      toast({
+        title: '🎉 Modo Festa ATIVADO!',
+        description: 'Samba de jogador ninguém segura! 🕺💃',
+      });
+      playAudio('/winner.mp3');
+      // Auto-disable after 10 seconds
+      setTimeout(() => setPartyMode(false), 10000);
+    }
+  };
 
   // Fetch phase matches when tab switches
   const fetchPhaseMatches = useCallback(async (phase: string) => {
@@ -959,11 +1049,7 @@ function HomeContent() {
     setWinnerModal({ phase: phaseKey, winnerName, audioSrc });
 
     if (winnerName) {
-      if (audioSrc) {
-        playAudio(audioSrc);
-      } else {
-        playAudio('/winner.mp3');
-      }
+      playAudio(resolveAudioSrc(audioSrc));
     } else {
       playAudio('/no_winner_to_show.mp3');
     }
@@ -978,11 +1064,7 @@ function HomeContent() {
     setWinnerModal({ phase: winnerKey, winnerName, audioSrc });
 
     if (winnerName) {
-      if (audioSrc) {
-        playAudio(audioSrc);
-      } else {
-        playAudio('/winner.mp3');
-      }
+      playAudio(resolveAudioSrc(audioSrc));
     } else {
       playAudio('/no_winner_to_show.mp3');
     }
@@ -999,8 +1081,8 @@ function HomeContent() {
           <div className="flex items-center justify-center gap-3 mb-4">
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="cursor-default">
-                  <Trophy className="h-12 w-12 text-yellow-300 drop-shadow-lg hover:scale-110 transition-transform" />
+                <span className="cursor-pointer" onClick={handleTrophyClick}>
+                  <Trophy className={`h-12 w-12 text-yellow-300 drop-shadow-lg hover:scale-110 transition-transform ${showTrophySecret ? 'animate-spin' : ''}`} />
                 </span>
               </TooltipTrigger>
               <TooltipContent className="bg-yellow-500 text-white border-none">
@@ -1012,8 +1094,8 @@ function HomeContent() {
             </h1>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="cursor-default">
-                  <Trophy className="h-12 w-12 text-yellow-300 drop-shadow-lg hover:scale-110 transition-transform" />
+                <span className="cursor-pointer" onClick={handleTrophyClick}>
+                  <Trophy className={`h-12 w-12 text-yellow-300 drop-shadow-lg hover:scale-110 transition-transform ${showTrophySecret ? 'animate-spin' : ''}`} />
                 </span>
               </TooltipTrigger>
               <TooltipContent className="bg-yellow-500 text-white border-none">
@@ -1101,10 +1183,55 @@ function HomeContent() {
         </Card>
       </main>
 
-      <footer className="bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-auto">
+      <footer className={`bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-auto cursor-pointer select-none ${partyMode ? 'animate-rainbow' : ''}`}
+        onDoubleClick={handleFooterDoubleClick}>
         Bolão Copa do Mundo 2026 — Bons palpites! ⚽
         <a href="/?admin" className="ml-2 text-gray-300 hover:text-gray-400 text-xs">⚙</a>
       </footer>
+
+      {/* Konami Code Easter Egg Overlay */}
+      {konamiActivated && !konamiDismissed && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 animate-fade-in" onClick={() => setKonamiDismissed(true)}>
+          <div className="text-center space-y-6 p-8">
+            <div className="text-8xl animate-bounce">🎮</div>
+            <h2 className="text-4xl font-black text-yellow-400 drop-shadow-lg">KONAMI CODE!</h2>
+            <p className="text-xl text-white font-bold">↑ ↑ ↓ ↓ ← → ← → B A</p>
+            <p className="text-lg text-emerald-300">
+              {pickRandom([
+                'Você desbloqueou o modo secreto! O juiz não viu! 🏃',
+                'Código Konami ativado! Gol de placa! ⚽',
+                'Jogador desbloqueado: Você é o CARA! 🏆',
+                'Invencibilidade ativada por 30 segundos! 💪',
+              ])}
+            </p>
+            <div className="flex justify-center gap-4 text-5xl">
+              {['🇧🇷', '⚽', '🏆', '🎯', '🥅'].map((emoji, i) => (
+                <span key={i} className="animate-bounce" style={{ animationDelay: `${i * 150}ms` }}>{emoji}</span>
+              ))}
+            </div>
+            <p className="text-sm text-gray-400 mt-4">Clique para fechar</p>
+          </div>
+        </div>
+      )}
+
+      {/* Party Mode Easter Egg - floating emojis */}
+      {partyMode && (
+        <div className="fixed inset-0 pointer-events-none z-[9998] overflow-hidden">
+          {Array.from({ length: 20 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute animate-float-up text-3xl"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 3}s`,
+                animationDuration: `${2 + Math.random() * 3}s`,
+              }}
+            >
+              {pickRandom(['⚽', '🏆', '🥅', '🎯', '🇧🇷', '🎉', '🎊', '💫', '⭐', '🔥'])}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 
@@ -1244,7 +1371,7 @@ function HomeContent() {
         {showAllBetsComplete && (
           <div className="bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-400 text-amber-900 px-4 py-3 text-center font-bold shadow-md animate-pulse">
             <Sparkles className="h-5 w-5 inline mr-2" />
-            Tabela completa! Você tá mais preparado que o Tite! 😎⚽
+            Tabela completa! Você tá mais preparado que o Ancelotti! 😎⚽
             <Sparkles className="h-5 w-5 inline ml-2" />
           </div>
         )}
@@ -1459,11 +1586,7 @@ function HomeContent() {
                   <div className="text-6xl font-black text-emerald-700 animate-bounce">🏆</div>
                   <p className="text-2xl font-bold text-emerald-800">{winnerModal.winnerName}</p>
                   <p className="text-sm text-gray-500">Parabéns ao ganhador! 🎉</p>
-                  {winnerModal.audioSrc && (
-                    <div className="flex items-center justify-center gap-1 text-xs text-gray-400">
-                      <Music className="h-3 w-3" /> Áudio personalizado
-                    </div>
-                  )}
+                  {/* Audio indicator removed - no "Áudio personalizado" label shown to users */}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1483,9 +1606,48 @@ function HomeContent() {
           </DialogContent>
         </Dialog>
 
-        <footer className="bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-4">
+        <footer className={`bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-4 cursor-pointer select-none ${partyMode ? 'animate-rainbow' : ''}`}
+          onDoubleClick={handleFooterDoubleClick}>
           Bolão Copa do Mundo 2026 — {player.name} ⚽
         </footer>
+
+        {/* Konami Code Easter Egg Overlay (bet page) */}
+        {konamiActivated && !konamiDismissed && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 animate-fade-in" onClick={() => setKonamiDismissed(true)}>
+            <div className="text-center space-y-6 p-8">
+              <div className="text-8xl animate-bounce">🎮</div>
+              <h2 className="text-4xl font-black text-yellow-400 drop-shadow-lg">KONAMI CODE!</h2>
+              <p className="text-xl text-white font-bold">↑ ↑ ↓ ↓ ← → ← → B A</p>
+              <p className="text-lg text-emerald-300">
+                {pickRandom([
+                  'Seus palpites agora têm poder extra! ⚡',
+                  'Código Konami! A bola vai entrar sozinha! ⚽',
+                  'Gol de placa desbloqueado! 🏆',
+                ])}
+              </p>
+              <p className="text-sm text-gray-400 mt-4">Clique para fechar</p>
+            </div>
+          </div>
+        )}
+
+        {/* Party Mode Easter Egg (bet page) */}
+        {partyMode && (
+          <div className="fixed inset-0 pointer-events-none z-[9998] overflow-hidden">
+            {Array.from({ length: 20 }).map((_, i) => (
+              <div
+                key={i}
+                className="absolute animate-float-up text-3xl"
+                style={{
+                  left: `${Math.random() * 100}%`,
+                  animationDelay: `${Math.random() * 3}s`,
+                  animationDuration: `${2 + Math.random() * 3}s`,
+                }}
+              >
+                {pickRandom(['⚽', '🏆', '🥅', '🎯', '🇧🇷', '🎉', '🎊', '💫', '⭐', '🔥'])}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     );
   };
@@ -1795,11 +1957,14 @@ function HomeContent() {
                               {/* Audio selector */}
                               <Select
                                 value={currentData.audioSrc || '__none__'}
-                                onValueChange={(val) => setAdminPhaseWinners(prev => {
-                                  const newMap = new Map(prev);
-                                  newMap.set(winnerKey, { ...currentData, audioSrc: val === '__none__' ? null : val });
-                                  return newMap;
-                                })}
+                                onValueChange={(val) => {
+                                  setAdminPhaseWinners(prev => {
+                                    const newMap = new Map(prev);
+                                    const existing = prev.get(winnerKey) || { winnerName: '', audioSrc: null as string | null };
+                                    newMap.set(winnerKey, { ...existing, audioSrc: val === '__none__' ? null : val });
+                                    return newMap;
+                                  });
+                                }}
                               >
                                 <SelectTrigger className="w-[140px] text-xs" size="sm">
                                   <Music className="h-3 w-3 mr-1 text-amber-500" />
@@ -1808,10 +1973,9 @@ function HomeContent() {
                                 <SelectContent>
                                   <SelectItem value="__none__">Padrão</SelectItem>
                                   {audioFiles.map((audioName) => {
-                                    const fullPath = `/win/${audioName}.mp3`;
                                     const displayName = audioName.replace(/\.mp3$/, '');
                                     return (
-                                      <SelectItem key={audioName} value={fullPath}>
+                                      <SelectItem key={audioName} value={audioName}>
                                         <div className="flex items-center gap-1.5">
                                           <Volume2 className="h-3 w-3" />
                                           {displayName}
@@ -1901,9 +2065,29 @@ function HomeContent() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <footer className="bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-auto">
+      <footer className={`bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-auto cursor-pointer select-none ${partyMode ? 'animate-rainbow' : ''}`}
+        onDoubleClick={handleFooterDoubleClick}>
         Painel Administrativo — Bolão Copa do Mundo 2026
       </footer>
+
+      {/* Konami Code Easter Egg Overlay (also available in admin) */}
+      {konamiActivated && !konamiDismissed && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 animate-fade-in" onClick={() => setKonamiDismissed(true)}>
+          <div className="text-center space-y-6 p-8">
+            <div className="text-8xl animate-bounce">🎮</div>
+            <h2 className="text-4xl font-black text-yellow-400 drop-shadow-lg">KONAMI CODE!</h2>
+            <p className="text-xl text-white font-bold">↑ ↑ ↓ ↓ ← → ← → B A</p>
+            <p className="text-lg text-emerald-300">
+              {pickRandom([
+                'Até o admin tem seus segredos! 🤫',
+                'Modo ADM secreto desbloqueado! ⚡',
+                'Você é mais esperto que o VAR! 🧐',
+              ])}
+            </p>
+            <p className="text-sm text-gray-400 mt-4">Clique para fechar</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 
