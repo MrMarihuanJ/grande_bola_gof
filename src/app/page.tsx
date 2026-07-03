@@ -216,6 +216,20 @@ const resolveAudioSrc = (audioSrc: string | null): string => {
   return `/win/${audioSrc}.mp3`;
 };
 
+// Normalize audioSrc to base name for Select compatibility
+// Converts "/win/winner.mp3" → "winner", "winner" → "winner"
+const normalizeAudioSrc = (audioSrc: string | null): string | null => {
+  if (!audioSrc) return null;
+  // If it's a full path like /win/something.mp3, extract just the base name
+  const match = audioSrc.match(/\/win\/(.+)\.mp3$/);
+  if (match) return match[1];
+  // If it's /something.mp3 (root level), extract base name
+  const rootMatch = audioSrc.match(/^\/(.+)\.mp3$/);
+  if (rootMatch) return rootMatch[1];
+  // Otherwise return as-is (already a base name)
+  return audioSrc;
+};
+
 // Generate a World Cup themed gradient for team badges
 function getTeamColor(abbr: string): string {
   const colors: Record<string, string> = {
@@ -259,6 +273,10 @@ function getWinnerLabel(winnerKey: string): string {
 
 // Random item helper
 const pickRandom = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+// Konami Code sequence: ↑ ↑ ↓ ↓ ← → ← → B A
+// Defined OUTSIDE the component so it's stable across renders
+const KONAMI_CODE = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
 
 function HomeContent() {
   const searchParams = useSearchParams();
@@ -323,9 +341,8 @@ function HomeContent() {
 
   // ========== Easter Egg States ==========
   // Konami Code
-  const [konamiSequence, setKonamiSequence] = useState<string[]>([]);
   const [konamiActivated, setKonamiActivated] = useState(false);
-  const [konamiDismissed, setKonamiDismissed] = useState(false);
+  const konamiRef = useRef<string[]>([]);
 
   // Secret click counter on trophy
   const [trophyClickCount, setTrophyClickCount] = useState(0);
@@ -333,9 +350,6 @@ function HomeContent() {
 
   // Double-click footer for party mode
   const [partyMode, setPartyMode] = useState(false);
-
-  // Konami Code sequence: ↑ ↑ ↓ ↓ ← → ← → B A
-  const KONAMI_CODE = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
 
   // Read URL params
   const adminParam = searchParams.get('admin');
@@ -400,7 +414,7 @@ function HomeContent() {
         if (res.ok) {
           const data: PhaseWinnerData[] = await res.json();
           const map = new Map<string, { winnerName: string; audioSrc: string | null }>();
-          data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: w.audioSrc ?? null }));
+          data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: normalizeAudioSrc(w.audioSrc) }));
           setPhaseWinners(map);
         }
       } catch (e) {
@@ -449,20 +463,22 @@ function HomeContent() {
   // ========== Konami Code Easter Egg ==========
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const key = e.key === 'b' ? 'b' : e.key === 'a' ? 'a' : e.key;
-      setKonamiSequence(prev => {
-        const next = [...prev, key];
-        // Keep only the last 10 keys (length of Konami code)
-        if (next.length > KONAMI_CODE.length) next.shift();
-        // Check if the sequence matches
-        if (next.length === KONAMI_CODE.length && next.every((k, i) => k === KONAMI_CODE[i])) {
-          setKonamiActivated(true);
-          playAudio('/winner.mp3');
-          // Auto-dismiss after 8 seconds
-          setTimeout(() => setKonamiDismissed(true), 8000);
-        }
-        return next;
-      });
+      // Normalize key: Arrow keys stay as-is, letters are lowercased
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      const seq = konamiRef.current;
+      seq.push(key);
+      // Keep only the last 10 keys (length of Konami code)
+      if (seq.length > KONAMI_CODE.length) seq.shift();
+      // Check if the sequence matches
+      if (seq.length === KONAMI_CODE.length && seq.every((k, i) => k === KONAMI_CODE[i])) {
+        konamiRef.current = [];
+        setKonamiActivated(true);
+        playAudio('/winner.mp3');
+        // Auto-dismiss after 8 seconds
+        setTimeout(() => {
+          setKonamiActivated(false);
+        }, 8000);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -748,7 +764,7 @@ function HomeContent() {
       if (res.ok) {
         const data: PhaseWinnerData[] = await res.json();
         const map = new Map<string, { winnerName: string; audioSrc: string | null }>();
-        data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: w.audioSrc ?? null }));
+        data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: normalizeAudioSrc(w.audioSrc) }));
         setAdminPhaseWinners(map);
       }
     } catch (e) {
@@ -773,7 +789,7 @@ function HomeContent() {
         if (winnersRes.ok) {
           const data: PhaseWinnerData[] = await winnersRes.json();
           const map = new Map<string, { winnerName: string; audioSrc: string | null }>();
-          data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: w.audioSrc ?? null }));
+          data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: normalizeAudioSrc(w.audioSrc) }));
           setPhaseWinners(map);
         }
       } else {
@@ -1005,7 +1021,7 @@ function HomeContent() {
       if (winnersRes.ok) {
         const data: PhaseWinnerData[] = await winnersRes.json();
         const map = new Map<string, { winnerName: string; audioSrc: string | null }>();
-        data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: w.audioSrc ?? null }));
+        data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: normalizeAudioSrc(w.audioSrc) }));
         setPhaseWinners(map);
       }
     } catch (e) {
@@ -1190,8 +1206,8 @@ function HomeContent() {
       </footer>
 
       {/* Konami Code Easter Egg Overlay */}
-      {konamiActivated && !konamiDismissed && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 animate-fade-in" onClick={() => setKonamiDismissed(true)}>
+      {konamiActivated && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 animate-fade-in" onClick={() => setKonamiActivated(false)}>
           <div className="text-center space-y-6 p-8">
             <div className="text-8xl animate-bounce">🎮</div>
             <h2 className="text-4xl font-black text-yellow-400 drop-shadow-lg">KONAMI CODE!</h2>
@@ -1612,8 +1628,8 @@ function HomeContent() {
         </footer>
 
         {/* Konami Code Easter Egg Overlay (bet page) */}
-        {konamiActivated && !konamiDismissed && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 animate-fade-in" onClick={() => setKonamiDismissed(true)}>
+        {konamiActivated && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 animate-fade-in" onClick={() => setKonamiActivated(false)}>
             <div className="text-center space-y-6 p-8">
               <div className="text-8xl animate-bounce">🎮</div>
               <h2 className="text-4xl font-black text-yellow-400 drop-shadow-lg">KONAMI CODE!</h2>
@@ -1930,9 +1946,36 @@ function HomeContent() {
               <Card className="shadow-md">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><Award className="h-5 w-5" /> Ganhadores</CardTitle>
-                  <CardDescription>Defina o 1º, 2º e 3º lugar de cada fase. Clique no ✕ para remover um ganhador.</CardDescription>
+                  <CardDescription>
+                    Defina o 1º, 2º e 3º lugar de cada fase. Clique no ✕ para remover um ganhador.
+                  </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6">
+                <CardContent className="space-y-4">
+                  {/* Audio files info bar */}
+                  <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs">
+                    <div className="flex items-center gap-1.5 text-amber-700">
+                      <Music className="h-3.5 w-3.5" />
+                      <span>{audioFiles.length} áudio(s) disponível(is) em /public/win/</span>
+                    </div>
+                    <Button variant="outline" size="sm"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/admin/regenerate-audio-manifest?password=${encodeURIComponent(adminPassword)}`, { method: 'POST' });
+                          if (res.ok) {
+                            const data = await res.json();
+                            setAudioFiles(data.files || []);
+                            toast({ title: 'Manifesto atualizado! 🎵', description: data.message });
+                          } else {
+                            toast({ title: 'Erro ao atualizar', variant: 'destructive' });
+                          }
+                        } catch {
+                          toast({ title: 'Erro de conexão', variant: 'destructive' });
+                        }
+                      }}
+                      className="h-6 text-[10px] px-2 border-amber-300 text-amber-700 hover:bg-amber-100">
+                      <Volume2 className="h-3 w-3 mr-1" /> Atualizar lista
+                    </Button>
+                  </div>
                   {PHASES_FOR_WINNERS.map(phase => (
                     <div key={phase.key} className="space-y-2">
                       <h4 className="font-semibold text-sm text-amber-800 border-b border-amber-200 pb-1">{phase.label}</h4>
@@ -1964,6 +2007,10 @@ function HomeContent() {
                                     newMap.set(winnerKey, { ...existing, audioSrc: val === '__none__' ? null : val });
                                     return newMap;
                                   });
+                                  // Preview the audio when selecting
+                                  if (val !== '__none__') {
+                                    playAudio(`/win/${val}.mp3`);
+                                  }
                                 }}
                               >
                                 <SelectTrigger className="w-[140px] text-xs" size="sm">
@@ -1971,7 +2018,7 @@ function HomeContent() {
                                   <SelectValue placeholder="Áudio" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="__none__">Padrão</SelectItem>
+                                  <SelectItem value="__none__">Padrão (winner.mp3)</SelectItem>
                                   {audioFiles.map((audioName) => {
                                     const displayName = audioName.replace(/\.mp3$/, '');
                                     return (
@@ -2071,8 +2118,8 @@ function HomeContent() {
       </footer>
 
       {/* Konami Code Easter Egg Overlay (also available in admin) */}
-      {konamiActivated && !konamiDismissed && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 animate-fade-in" onClick={() => setKonamiDismissed(true)}>
+      {konamiActivated && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 animate-fade-in" onClick={() => setKonamiActivated(false)}>
           <div className="text-center space-y-6 p-8">
             <div className="text-8xl animate-bounce">🎮</div>
             <h2 className="text-4xl font-black text-yellow-400 drop-shadow-lg">KONAMI CODE!</h2>
