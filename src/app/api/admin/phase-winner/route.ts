@@ -3,7 +3,7 @@ import { db, ensureMigrated } from '@/lib/db';
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'copa2026admin';
 
-// GET - Return all phase winners
+// GET - Return all phase winners (admin only, includes audioSrc)
 export async function GET(request: Request) {
   try {
     await ensureMigrated();
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   }
 }
 
-// POST - Set winner for a phase (upsert)
+// POST - Set winner for a phase (upsert, with optional audioSrc)
 export async function POST(request: Request) {
   try {
     await ensureMigrated();
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { phase, winnerName } = body;
+    const { phase, winnerName, audioSrc } = body;
 
     if (!phase || !winnerName) {
       return NextResponse.json({ error: 'phase and winnerName are required' }, { status: 400 });
@@ -47,8 +47,8 @@ export async function POST(request: Request) {
 
     const winner = await db.phaseWinner.upsert({
       where: { phase },
-      update: { winnerName },
-      create: { phase, winnerName },
+      update: { winnerName, audioSrc: audioSrc ?? null },
+      create: { phase, winnerName, audioSrc: audioSrc ?? null },
     });
 
     return NextResponse.json({

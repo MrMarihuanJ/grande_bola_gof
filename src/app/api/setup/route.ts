@@ -185,12 +185,25 @@ async function runSetup(password: string) {
         "id" TEXT NOT NULL,
         "phase" TEXT NOT NULL,
         "winnerName" TEXT NOT NULL,
+        "audioSrc" TEXT,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT "PhaseWinner_pkey" PRIMARY KEY ("id")
       );
     `);
     results.push('Tabela PhaseWinner criada/verificada');
+
+    // Add audioSrc column if not exists (for existing databases)
+    try {
+      await directClient.$executeRawUnsafe(`ALTER TABLE "PhaseWinner" ADD COLUMN IF NOT EXISTS "audioSrc" TEXT;`);
+      results.push('Coluna audioSrc adicionada/verificada na tabela PhaseWinner');
+    } catch (e: any) {
+      if (e.message?.includes('already exists') || e.message?.includes('duplicate')) {
+        results.push('Coluna audioSrc já existe na tabela PhaseWinner');
+      } else {
+        results.push('Coluna audioSrc: ' + e.message);
+      }
+    }
 
     // Índices da tabela PhaseWinner
     await directClient.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "PhaseWinner_phase_key" ON "PhaseWinner"("phase");`);

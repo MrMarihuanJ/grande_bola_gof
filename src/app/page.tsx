@@ -9,6 +9,18 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -25,7 +37,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Trophy, Save, Check, Users, Shield, Download, Info, Loader2, ChevronDown, ChevronUp, Trash2, Clock, AlertTriangle, Star, PartyPopper, Settings, Award, Medal, X } from 'lucide-react';
+import {
+  Trophy, Save, Check, Users, Shield, Download, Info, Loader2,
+  ChevronDown, ChevronUp, Trash2, Clock, AlertTriangle, Star,
+  PartyPopper, Settings, Award, X, Music, Sparkles,
+  Volume2
+} from 'lucide-react';
 
 interface Match {
   id: string;
@@ -43,7 +60,7 @@ interface Bet {
   matchId: string;
   homeScore: number | null;
   awayScore: number | null;
-  penaltyWinner: string | null; // "home" or "away" — only for knockout phases when tied
+  penaltyWinner: string | null;
 }
 
 interface Player {
@@ -56,9 +73,10 @@ interface PhaseWinnerData {
   id: string;
   phase: string;
   winnerName: string;
+  audioSrc: string | null;
 }
 
-// Phase configuration constants — CORRECTED match counts
+// Phase configuration constants
 const PHASES = [
   { key: 'groups', label: '1ª Fase', matchCount: 72, order: 0 },
   { key: 'segunda_fase', label: '2ª Fase', matchSlots: 32, matchCount: 16, order: 1 },
@@ -71,14 +89,12 @@ const PHASES = [
 
 const KNOCKOUT_PHASES = PHASES.filter(p => p.key !== 'groups');
 
-// Winner positions per phase — 1º, 2º, 3º lugar for EACH phase
 const WINNER_POSITIONS = [
   { suffix: '_1', label: '1º Lugar', emoji: '🥇' },
   { suffix: '_2', label: '2º Lugar', emoji: '🥈' },
   { suffix: '_3', label: '3º Lugar', emoji: '🥉' },
 ];
 
-// Phases that can have winners (all phases)
 const PHASES_FOR_WINNERS = [
   { key: 'groups', label: '1ª Fase (Grupos)' },
   { key: 'segunda_fase', label: '2ª Fase' },
@@ -95,7 +111,6 @@ const ROUND_LABELS: Record<number, string> = {
   3: '3ª Rodada',
 };
 
-// Teams for admin team selector — CORRECTED: removed SAL/SEM, fixed CDM
 const TEAMS = [
   { abbr: 'MEX', name: 'México' },
   { abbr: 'AFS', name: 'África do Sul' },
@@ -147,6 +162,34 @@ const TEAMS = [
   { abbr: 'PAN', name: 'Panamá' },
 ];
 
+// ========== Easter Egg Constants ==========
+const FUNNY_LOADING_MESSAGES = [
+  'Carregando... enquanto isso, aqueça as pernas! ⚽',
+  'Preparando os gramados... 🌱',
+  'Aquecendo a bola... 🏐',
+  'O juiz está conferindo o replay... 📺',
+  'Ajeitando as redes do gol... 🥅',
+  'Substituição tá saindo... 🏃',
+];
+
+const VICTORY_MESSAGES = [
+  'Golaço! Palpites salvos! ⚽',
+  'Chute certeiro! Tá na reserva! 🎯',
+  'Cobertura perfeita! Palpites no gol! 🏆',
+  'Deu certo! Mais que um passe de tique-taque! ✨',
+  'Gol de placa! Seus palpites foram salvos! 🌟',
+  'Pênalti convertido! Palpites registrados! 💪',
+];
+
+const TROPHY_TOOLTIP_PHRASES = [
+  'Quem viver verá! 👀',
+  'A bola é redonda... ⚽',
+  'Futebol é uma caixinha de surpresas! 🎁',
+  'O jogo só termina quando termina! ⏱️',
+  'Enquanto há vida, há esperança! 🙏',
+  'A copa é do povo! 🇧🇷',
+];
+
 // Audio playback helper
 const playAudio = (src: string) => {
   try {
@@ -196,6 +239,9 @@ function getWinnerLabel(winnerKey: string): string {
   return winnerKey;
 }
 
+// Random item helper
+const pickRandom = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
 function HomeContent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
@@ -215,6 +261,7 @@ function HomeContent() {
   // UI state
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState(pickRandom(FUNNY_LOADING_MESSAGES));
 
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set([1]));
   const [hasChanges, setHasChanges] = useState(false);
@@ -223,21 +270,21 @@ function HomeContent() {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [setupLoading, setSetupLoading] = useState(false);
 
-  // Phase tabs state (for betting page)
+  // Phase tabs state
   const [activePhase, setActivePhase] = useState('groups');
   const [phaseMatches, setPhaseMatches] = useState<Map<string, Match[]>>(new Map());
-  const [phaseWinners, setPhaseWinners] = useState<Map<string, string>>(new Map());
-  const [winnerModal, setWinnerModal] = useState<{ phase: string; winnerName: string | null } | null>(null);
+  const [phaseWinners, setPhaseWinners] = useState<Map<string, { winnerName: string; audioSrc: string | null }>>(new Map());
+  const [winnerModal, setWinnerModal] = useState<{ phase: string; winnerName: string | null; audioSrc?: string | null } | null>(null);
   const [phaseLoading, setPhaseLoading] = useState(false);
 
-  // Betting page sub-tab: 'bets' or 'winners'
+  // Betting page sub-tab
   const [betSubTab, setBetSubTab] = useState<'bets' | 'winners'>('bets');
 
   // Admin tabs state
   const [adminTab, setAdminTab] = useState<'bets' | 'phases' | 'winners'>('bets');
   const [adminPhaseConfig, setAdminPhaseConfig] = useState<string>('segunda_fase');
   const [adminPhaseMatches, setAdminPhaseMatches] = useState<Array<{ homeTeam: string; awayTeam: string; homeName: string; awayName: string; matchNum: number }>>([]);
-  const [adminPhaseWinners, setAdminPhaseWinners] = useState<Map<string, string>>(new Map());
+  const [adminPhaseWinners, setAdminPhaseWinners] = useState<Map<string, { winnerName: string; audioSrc: string | null }>>(new Map());
   const [adminPhaseSaving, setAdminPhaseSaving] = useState(false);
   const [adminWinnerSaving, setAdminWinnerSaving] = useState(false);
   const [teamPickerOpen, setTeamPickerOpen] = useState(false);
@@ -247,21 +294,45 @@ function HomeContent() {
   // Reorder state
   const [reorderLoading, setReorderLoading] = useState(false);
 
+  // Audio files state
+  const [audioFiles, setAudioFiles] = useState<string[]>([]);
+
+  // Trophy tooltip state
+  const [trophyTooltipText] = useState(() => pickRandom(TROPHY_TOOLTIP_PHRASES));
+
+  // All bets complete state
+  const [showAllBetsComplete, setShowAllBetsComplete] = useState(false);
+
   // Read URL params
   const adminParam = searchParams.get('admin');
   const [currentPage, setCurrentPage] = useState<'home' | 'bet' | 'admin'>(
     adminParam !== null ? 'admin' : 'home'
   );
 
+  // Fetch audio files on mount
+  useEffect(() => {
+    const fetchAudioFiles = async () => {
+      try {
+        const res = await fetch('/win/audios.json');
+        if (res.ok) {
+          const data: string[] = await res.json();
+          setAudioFiles(data);
+        }
+      } catch (e) {
+        console.error('Failed to fetch audio files:', e);
+      }
+    };
+    fetchAudioFiles();
+  }, []);
+
   // Auto-migrate + fetch ALL matches on initial load
-  // Migration must complete BEFORE any queries that touch the Bet table
   useEffect(() => {
     const initApp = async () => {
-      // Step 1: Auto-migrate (ensure all columns exist)
+      // Step 1: Auto-migrate
       try {
         await fetch('/api/migrate');
       } catch (e) {
-        console.warn('Auto-migration failed (non-critical, server-side migration should handle it):', e);
+        console.warn('Auto-migration failed (non-critical):', e);
       }
 
       // Step 2: Fetch matches
@@ -289,13 +360,13 @@ function HomeContent() {
         setInitialLoading(false);
       }
 
-      // Step 3: Fetch phase winners (can run after matches, doesn't depend on Bet)
+      // Step 3: Fetch phase winners
       try {
         const res = await fetch('/api/phase-winners');
         if (res.ok) {
           const data: PhaseWinnerData[] = await res.json();
-          const map = new Map<string, string>();
-          data.forEach((w) => map.set(w.phase, w.winnerName));
+          const map = new Map<string, { winnerName: string; audioSrc: string | null }>();
+          data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: w.audioSrc ?? null }));
           setPhaseWinners(map);
         }
       } catch (e) {
@@ -378,7 +449,7 @@ function HomeContent() {
       const res = await fetch(`/api/setup?password=${encodeURIComponent(adminPassword)}`);
       const data = await res.json();
       if (res.ok && data.success) {
-        toast({ title: 'Banco configurado!', description: `Tabelas criadas e ${data.counts?.matches || 0} jogos inseridos.` });
+        toast({ title: 'Banco configurado!', description: `Tabelas criadas e ${data.counts?.matches || 0} jogos inseridos. 🎉` });
         setNeedsSetup(false);
         setTimeout(() => window.location.reload(), 1500);
       } else if (res.status === 401) {
@@ -413,9 +484,9 @@ function HomeContent() {
         setPlayer({ id: data.id, name: data.name, token: data.token });
         setCurrentPage('bet');
         if (data.isNew) {
-          toast({ title: 'Bem-vindo ao bolão!', description: `Conta criada com sucesso. Bons palpites, ${data.name}!` });
+          toast({ title: 'Bem-vindo ao bolão!', description: `Conta criada com sucesso. Bons palpites, ${data.name}! 🎉` });
         } else {
-          toast({ title: `Bem-vindo de volta, ${data.name}!`, description: 'Seus palpites anteriores foram carregados.' });
+          toast({ title: `Bem-vindo de volta, ${data.name}!`, description: 'Seus palpites anteriores foram carregados. ⚽' });
         }
       } else {
         const error = await res.json();
@@ -434,7 +505,7 @@ function HomeContent() {
 
     const currentMatches = activePhase === 'groups' ? matches : (phaseMatches.get(activePhase) || []);
 
-    const betList: { matchId: string; homeScore: number | null; awayScore: number | null }[] = [];
+    const betList: { matchId: string; homeScore: number | null; awayScore: number | null; penaltyWinner?: string | null }[] = [];
     currentMatches.forEach(match => {
       const bet = bets.get(match.id);
       if (bet) {
@@ -456,7 +527,7 @@ function HomeContent() {
     });
 
     if (betList.length === 0) {
-      toast({ title: 'Nenhum palpite', description: 'Preencha pelo menos um placar antes de salvar.', variant: 'destructive' });
+      toast({ title: 'Nenhum palpite', description: 'Nenhum palpite ainda... Tá esperando o quê? O apito final? 🤨', variant: 'destructive' });
       return;
     }
 
@@ -470,8 +541,19 @@ function HomeContent() {
 
       if (res.ok) {
         const data = await res.json();
-        toast({ title: 'Palpites salvos!', description: data.message });
+        toast({ title: pickRandom(VICTORY_MESSAGES), description: data.message });
         setHasChanges(false);
+
+        // Check if all bets for this phase are now filled
+        const currentPhaseMatches = activePhase === 'groups' ? matches : (phaseMatches.get(activePhase) || []);
+        const allFilled = currentPhaseMatches.every(match => {
+          const bet = bets.get(match.id);
+          return bet && bet.homeScore !== '' && bet.awayScore !== '';
+        });
+        if (allFilled && currentPhaseMatches.length > 0) {
+          setShowAllBetsComplete(true);
+          setTimeout(() => setShowAllBetsComplete(false), 4000);
+        }
 
         const betsRes = await fetch(`/api/bets?playerId=${player.id}`);
         if (betsRes.ok) {
@@ -502,7 +584,6 @@ function HomeContent() {
         const current = prev.get(matchId) || { homeScore: '', awayScore: '', penaltyWinner: '' };
         const updated = { ...current, [field]: sanitized };
 
-        // Auto-clear penaltyWinner if scores are no longer tied (knockout phases only)
         if (matchPhase && matchPhase !== 'groups') {
           const hs = field === 'homeScore' ? sanitized : current.homeScore;
           const as_ = field === 'awayScore' ? sanitized : current.awayScore;
@@ -515,7 +596,6 @@ function HomeContent() {
         return newMap;
       });
     } else {
-      // penaltyWinner
       setBets(prev => {
         const newMap = new Map(prev);
         newMap.set(matchId, { ...prev.get(matchId) || { homeScore: '', awayScore: '', penaltyWinner: '' }, penaltyWinner: value });
@@ -577,8 +657,8 @@ function HomeContent() {
       const res = await fetch(`/api/admin/phase-winner?password=${encodeURIComponent(adminPassword)}`);
       if (res.ok) {
         const data: PhaseWinnerData[] = await res.json();
-        const map = new Map<string, string>();
-        data.forEach((w) => map.set(w.phase, w.winnerName));
+        const map = new Map<string, { winnerName: string; audioSrc: string | null }>();
+        data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: w.audioSrc ?? null }));
         setAdminPhaseWinners(map);
       }
     } catch (e) {
@@ -593,19 +673,17 @@ function HomeContent() {
         method: 'DELETE',
       });
       if (res.ok) {
-        toast({ title: 'Ganhador removido!', description: `Ganhador de "${getWinnerLabel(phaseKey)}" foi removido.` });
-        // Update local state
+        toast({ title: 'Ganhador removido!', description: `Ganhador de "${getWinnerLabel(phaseKey)}" foi removido. 🗑️` });
         setAdminPhaseWinners(prev => {
           const newMap = new Map(prev);
           newMap.delete(phaseKey);
           return newMap;
         });
-        // Also refresh public winners
         const winnersRes = await fetch('/api/phase-winners');
         if (winnersRes.ok) {
           const data: PhaseWinnerData[] = await winnersRes.json();
-          const map = new Map<string, string>();
-          data.forEach((w) => map.set(w.phase, w.winnerName));
+          const map = new Map<string, { winnerName: string; audioSrc: string | null }>();
+          data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: w.audioSrc ?? null }));
           setPhaseWinners(map);
         }
       } else {
@@ -646,7 +724,7 @@ function HomeContent() {
     window.open(`/api/admin/export?password=${encodeURIComponent(adminPassword)}`, '_blank');
   };
 
-  // Reordenar partidas sem perder palpites
+  // Reordenar partidas
   const handleReorder = async () => {
     if (!confirm('Confirma a reordenacao das partidas conforme o seed-data.ts atual? Os palpites serao preservados.')) {
       return;
@@ -701,7 +779,6 @@ function HomeContent() {
 
   // ========== ADMIN: Phase configuration methods ==========
 
-  // Load phase matches for admin config — FIX: pad with empty slots if existing matches < expected
   const loadAdminPhaseConfig = async (phase: string) => {
     setAdminPhaseConfig(phase);
     try {
@@ -712,7 +789,6 @@ function HomeContent() {
         const expectedCount = phaseConfig?.matchCount || 1;
 
         if (data.length > 0) {
-          // Map existing matches
           const existing: typeof adminPhaseMatches = data.map((m: any) => ({
             homeTeam: m.homeTeam,
             awayTeam: m.awayTeam,
@@ -721,7 +797,6 @@ function HomeContent() {
             matchNum: m.matchNum,
           }));
 
-          // If existing count is less than expected, pad with empty slots
           if (existing.length < expectedCount) {
             for (let i = existing.length; i < expectedCount; i++) {
               existing.push({
@@ -736,7 +811,6 @@ function HomeContent() {
 
           setAdminPhaseMatches(existing);
         } else {
-          // Initialize with empty slots
           const slots: typeof adminPhaseMatches = [];
           for (let i = 0; i < expectedCount; i++) {
             slots.push({
@@ -771,7 +845,6 @@ function HomeContent() {
 
     setAdminPhaseSaving(true);
     try {
-      // Only send filled matches (skip empty slots)
       const filledMatches = adminPhaseMatches.filter(m => m.homeTeam && m.awayTeam);
 
       const res = await fetch(`/api/admin/phase-matches?password=${encodeURIComponent(adminPassword)}`, {
@@ -781,8 +854,7 @@ function HomeContent() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        toast({ title: 'Fase configurada!', description: data.message });
-        // Clear cache and re-fetch
+        toast({ title: 'Fase configurada! ✅', description: data.message });
         setPhaseMatches(prev => {
           const newMap = new Map(prev);
           newMap.delete(adminPhaseConfig);
@@ -814,13 +886,12 @@ function HomeContent() {
     setAdminWinnerSaving(true);
     try {
       const entries = Array.from(adminPhaseWinners.entries());
-      for (const [phase, winnerName] of entries) {
-        if (winnerName.trim()) {
-          // Save non-empty winner
+      for (const [phase, winnerData] of entries) {
+        if (winnerData.winnerName.trim()) {
           const res = await fetch(`/api/admin/phase-winner?password=${encodeURIComponent(adminPassword)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ phase, winnerName: winnerName.trim() }),
+            body: JSON.stringify({ phase, winnerName: winnerData.winnerName.trim(), audioSrc: winnerData.audioSrc || null }),
           });
           if (!res.ok) {
             const error = await res.json();
@@ -828,7 +899,6 @@ function HomeContent() {
             return;
           }
         } else {
-          // Delete empty winner
           const res = await fetch(`/api/admin/phase-winner?password=${encodeURIComponent(adminPassword)}&phase=${encodeURIComponent(phase)}`, {
             method: 'DELETE',
           });
@@ -839,13 +909,13 @@ function HomeContent() {
           }
         }
       }
-      toast({ title: 'Ganhadores salvos!', description: 'Todos os ganhadores foram atualizados.' });
+      toast({ title: 'E o campeão é... 🥁', description: 'Todos os ganhadores foram atualizados!' });
       // Refresh public winners
       const winnersRes = await fetch('/api/phase-winners');
       if (winnersRes.ok) {
         const data: PhaseWinnerData[] = await winnersRes.json();
-        const map = new Map<string, string>();
-        data.forEach((w) => map.set(w.phase, w.winnerName));
+        const map = new Map<string, { winnerName: string; audioSrc: string | null }>();
+        data.forEach((w) => map.set(w.phase, { winnerName: w.winnerName, audioSrc: w.audioSrc ?? null }));
         setPhaseWinners(map);
       }
     } catch (e) {
@@ -879,14 +949,40 @@ function HomeContent() {
     setTeamPickerTarget(null);
   };
 
-  // Handle "Ver Ganhador" click — now works for all phases
+  // Handle "Ver Ganhador" click
   const handleViewWinner = (phaseKey: string) => {
-    // For the "Ver Ganhador" button on match tabs, show the 1st place winner
     const winnerKey = `${phaseKey}_1`;
-    const winner = phaseWinners.get(winnerKey);
-    setWinnerModal({ phase: phaseKey, winnerName: winner || null });
-    if (winner) {
-      playAudio('/winner.mp3');
+    const winnerData = phaseWinners.get(winnerKey);
+    const winnerName = winnerData?.winnerName || null;
+    const audioSrc = winnerData?.audioSrc || null;
+
+    setWinnerModal({ phase: phaseKey, winnerName, audioSrc });
+
+    if (winnerName) {
+      if (audioSrc) {
+        playAudio(audioSrc);
+      } else {
+        playAudio('/winner.mp3');
+      }
+    } else {
+      playAudio('/no_winner_to_show.mp3');
+    }
+  };
+
+  // Handle clicking a winner row in the winners sub-tab
+  const handleWinnerRowClick = (winnerKey: string) => {
+    const winnerData = phaseWinners.get(winnerKey);
+    const winnerName = winnerData?.winnerName || null;
+    const audioSrc = winnerData?.audioSrc || null;
+
+    setWinnerModal({ phase: winnerKey, winnerName, audioSrc });
+
+    if (winnerName) {
+      if (audioSrc) {
+        playAudio(audioSrc);
+      } else {
+        playAudio('/winner.mp3');
+      }
     } else {
       playAudio('/no_winner_to_show.mp3');
     }
@@ -896,15 +992,36 @@ function HomeContent() {
 
   // Render home page
   const renderHome = () => (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex flex-col">
-      <header className="bg-gradient-to-r from-emerald-700 via-green-600 to-emerald-700 text-white shadow-lg">
-        <div className="max-w-4xl mx-auto px-4 py-8 text-center">
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <Trophy className="h-10 w-10 text-yellow-300" />
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">Copa do Mundo 2026</h1>
-            <Trophy className="h-10 w-10 text-yellow-300" />
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-green-50 flex flex-col">
+      <header className="relative bg-gradient-to-r from-emerald-800 via-green-600 to-emerald-800 text-white shadow-xl overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(255,255,255,0.1),transparent_60%)]" />
+        <div className="relative max-w-4xl mx-auto px-4 py-10 text-center">
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-default">
+                  <Trophy className="h-12 w-12 text-yellow-300 drop-shadow-lg hover:scale-110 transition-transform" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="bg-yellow-500 text-white border-none">
+                {trophyTooltipText}
+              </TooltipContent>
+            </Tooltip>
+            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight drop-shadow-sm">
+              Copa do Mundo 2026
+            </h1>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-default">
+                  <Trophy className="h-12 w-12 text-yellow-300 drop-shadow-lg hover:scale-110 transition-transform" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="bg-yellow-500 text-white border-none">
+                {trophyTooltipText}
+              </TooltipContent>
+            </Tooltip>
           </div>
-          <p className="text-lg text-green-100 font-medium">Bolão de Palpites — Faça seus palpites e torça!</p>
+          <p className="text-lg text-emerald-100 font-medium">Bolão de Palpites — Faça seus palpites e torça! ⚽</p>
         </div>
       </header>
 
@@ -932,7 +1049,7 @@ function HomeContent() {
                     className="text-base border-red-300 focus:border-red-500" />
                 </div>
                 <Button onClick={handleSetup} disabled={setupLoading || !adminPassword}
-                  className="bg-red-600 hover:bg-red-700 text-white px-6">
+                  className="bg-red-600 hover:bg-red-700 text-white px-6 shadow-md hover:shadow-lg transition-all">
                   {setupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Configurar Banco'}
                 </Button>
               </div>
@@ -940,7 +1057,7 @@ function HomeContent() {
           </Card>
         )}
 
-        <Card className="border-emerald-200 bg-emerald-50/50">
+        <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50/80 to-green-50/50 shadow-md hover:shadow-lg transition-shadow">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2 text-emerald-800">
               <Info className="h-5 w-5" /> Como funciona
@@ -956,9 +1073,9 @@ function HomeContent() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-md hover:shadow-lg transition-shadow">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2 text-emerald-800">
               <Users className="h-5 w-5 text-green-600" /> Entrar no Bolão
             </CardTitle>
             <CardDescription>Digite seu nome para entrar ou criar sua conta</CardDescription>
@@ -970,19 +1087,22 @@ function HomeContent() {
                 <Input id="name" placeholder="Digite seu nome" value={playerName}
                   onChange={(e) => setPlayerName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                  maxLength={100} className="text-base" />
+                  maxLength={100} className="text-base h-12 border-emerald-200 focus:border-emerald-500 focus:ring-emerald-500" />
               </div>
               <Button onClick={handleLogin} disabled={loading || !playerName.trim()}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white px-6">
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Entrar'}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 h-12 shadow-md hover:shadow-lg transition-all text-base font-semibold">
+                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Entrar'}
               </Button>
             </div>
+            <p className="text-sm text-emerald-600 mt-3 text-center font-medium">
+              Bora, bora, bora! 🇧🇷
+            </p>
           </CardContent>
         </Card>
       </main>
 
       <footer className="bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-auto">
-        Bolão Copa do Mundo 2026 — Bons palpites!
+        Bolão Copa do Mundo 2026 — Bons palpites! ⚽
         <a href="/?admin" className="ml-2 text-gray-300 hover:text-gray-400 text-xs">⚙</a>
       </footer>
     </div>
@@ -999,7 +1119,7 @@ function HomeContent() {
     const showPenaltyField = isKnockout && isDraw;
 
     return (
-      <div key={match.id} className={`px-4 py-3 ${isFilled ? 'bg-green-50/50' : ''}`}>
+      <div key={match.id} className={`px-4 py-3 transition-colors ${isFilled ? 'bg-emerald-50/60' : 'hover:bg-gray-50/50'}`}>
         <div className="flex items-center gap-2 md:gap-4">
           <div className="flex-1 text-right">
             <span className="font-bold text-sm md:text-base text-gray-800">{match.homeTeam}</span>
@@ -1008,13 +1128,13 @@ function HomeContent() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Input type="text" inputMode="numeric" pattern="[0-9]*" min={0} max={30}
-              className="w-14 h-10 text-center text-lg font-bold border-2 border-gray-200 focus:border-green-500 focus:ring-green-500"
+              className="w-14 h-10 text-center text-lg font-bold border-2 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500 rounded-lg transition-colors"
               placeholder="-" value={bet.homeScore}
               onChange={(e) => updateBet(match.id, 'homeScore', e.target.value, match.phase)}
               aria-label={`Placar ${match.homeTeam}`} />
             <span className="text-lg font-bold text-gray-400">×</span>
             <Input type="text" inputMode="numeric" pattern="[0-9]*" min={0} max={30}
-              className="w-14 h-10 text-center text-lg font-bold border-2 border-gray-200 focus:border-green-500 focus:ring-green-500"
+              className="w-14 h-10 text-center text-lg font-bold border-2 border-gray-200 focus:border-emerald-500 focus:ring-emerald-500 rounded-lg transition-colors"
               placeholder="-" value={bet.awayScore}
               onChange={(e) => updateBet(match.id, 'awayScore', e.target.value, match.phase)}
               aria-label={`Placar ${match.awayTeam}`} />
@@ -1026,23 +1146,22 @@ function HomeContent() {
           </div>
           {isSaved && (
             <div className="shrink-0 flex flex-col items-center">
-              <Check className="h-4 w-4 text-green-500" />
+              <Check className="h-4 w-4 text-emerald-500" />
               <span className="text-[8px] text-gray-400">
                 {new Date(savedBets.get(match.id)?.updatedAt || '').toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
           )}
         </div>
-        {/* Penalty winner selector — only for knockout phases when scores are tied */}
         {showPenaltyField && (
           <div className="mt-2 flex items-center gap-2 justify-center">
             <span className="text-xs font-semibold text-amber-700 whitespace-nowrap">Pênaltis:</span>
             <button
               onClick={() => updateBet(match.id, 'penaltyWinner', 'home')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-all duration-200 ${
                 bet.penaltyWinner === 'home'
-                  ? 'bg-emerald-500 text-white border-emerald-500 shadow-md'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'
+                  ? 'bg-emerald-500 text-white border-emerald-500 shadow-md scale-105'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300 hover:shadow-sm'
               }`}
             >
               {match.homeTeam} 🏆
@@ -1050,10 +1169,10 @@ function HomeContent() {
             <span className="text-gray-400 text-xs">ou</span>
             <button
               onClick={() => updateBet(match.id, 'penaltyWinner', 'away')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-all duration-200 ${
                 bet.penaltyWinner === 'away'
-                  ? 'bg-emerald-500 text-white border-emerald-500 shadow-md'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'
+                  ? 'bg-emerald-500 text-white border-emerald-500 shadow-md scale-105'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300 hover:shadow-sm'
               }`}
             >
               {match.awayTeam} 🏆
@@ -1068,8 +1187,11 @@ function HomeContent() {
   const renderBet = () => {
     if (!player) {
       return (
-        <div className="min-h-screen flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-green-50">
+          <div className="text-center">
+            <Loader2 className="h-10 w-10 animate-spin text-emerald-600 mx-auto" />
+            <p className="mt-4 text-gray-600">{pickRandom(FUNNY_LOADING_MESSAGES)}</p>
+          </div>
         </div>
       );
     }
@@ -1077,12 +1199,14 @@ function HomeContent() {
     const totalFilled = filledCount();
     const currentPhaseMatches = activePhase === 'groups' ? matches : (phaseMatches.get(activePhase) || []);
     const totalMatches = currentPhaseMatches.length || 72;
+    const progressPercent = totalMatches > 0 ? Math.round((totalFilled / totalMatches) * 100) : 0;
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50 flex flex-col">
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-green-50 flex flex-col">
         {/* Header */}
-        <header className="bg-gradient-to-r from-emerald-700 via-green-600 to-emerald-700 text-white shadow-lg sticky top-0 z-10">
-          <div className="max-w-4xl mx-auto px-4 py-4">
+        <header className="relative bg-gradient-to-r from-emerald-800 via-green-600 to-emerald-800 text-white shadow-xl sticky top-0 z-10">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(255,255,255,0.08),transparent_50%)]" />
+          <div className="relative max-w-4xl mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Trophy className="h-6 w-6 text-yellow-300" />
@@ -1095,32 +1219,47 @@ function HomeContent() {
                 </div>
                 <Button variant="outline" size="sm"
                   onClick={() => { setPlayer(null); setBets(new Map()); setSavedBets(new Map()); setCurrentPage('home'); }}
-                  className="bg-white/10 border-white/30 text-white hover:bg-white/20 text-xs">
+                  className="bg-white/10 border-white/30 text-white hover:bg-white/20 text-xs backdrop-blur-sm transition-all">
                   Sair
                 </Button>
               </div>
             </div>
-            <div className="mt-3 bg-green-800/40 rounded-full h-2">
-              <div className="bg-yellow-300 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${totalMatches > 0 ? Math.round((totalFilled / totalMatches) * 100) : 0}%` }} />
+            {/* Progress bar */}
+            <div className="mt-3 bg-emerald-900/50 rounded-full h-3 overflow-hidden shadow-inner">
+              <div className="bg-gradient-to-r from-yellow-300 to-yellow-400 h-3 rounded-full transition-all duration-500 ease-out relative"
+                style={{ width: `${progressPercent}%` }}>
+                {progressPercent > 10 && (
+                  <div className="absolute inset-0 bg-[linear-gradient(110deg,transparent_25%,rgba(255,255,255,0.3)_50%,transparent_75%)] animate-[shimmer_2s_infinite]" />
+                )}
+              </div>
             </div>
-            <p className="text-xs text-green-200 mt-1">
-              {totalFilled} de {totalMatches} palpites preenchidos ({totalMatches > 0 ? Math.round((totalFilled / totalMatches) * 100) : 0}%)
+            <p className="text-xs text-green-200 mt-1.5">
+              {totalFilled} de {totalMatches} palpites preenchidos ({progressPercent}%)
+              {progressPercent === 100 && ' ✨ Tabela completa!'}
             </p>
           </div>
         </header>
 
-        {/* Sub-tabs: Palpites / Ganhadores */}
-        <div className="bg-emerald-900 sticky top-[104px] z-10 shadow-md">
+        {/* All bets complete celebration */}
+        {showAllBetsComplete && (
+          <div className="bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-400 text-amber-900 px-4 py-3 text-center font-bold shadow-md animate-pulse">
+            <Sparkles className="h-5 w-5 inline mr-2" />
+            Tabela completa! Você tá mais preparado que o Tite! 😎⚽
+            <Sparkles className="h-5 w-5 inline ml-2" />
+          </div>
+        )}
+
+        {/* Sub-tabs */}
+        <div className="bg-emerald-900 sticky top-[104px] z-10 shadow-lg">
           <div className="max-w-4xl mx-auto flex">
             <button onClick={() => setBetSubTab('bets')}
-              className={`flex-1 px-4 py-2.5 text-sm font-semibold text-center transition-colors ${
-                betSubTab === 'bets' ? 'bg-yellow-400 text-emerald-900' : 'text-green-200 hover:bg-emerald-800/50'}`}>
+              className={`flex-1 px-4 py-3 text-sm font-semibold text-center transition-all duration-200 ${
+                betSubTab === 'bets' ? 'bg-yellow-400 text-emerald-900 shadow-inner' : 'text-green-200 hover:bg-emerald-800/50'}`}>
               <Save className="h-4 w-4 inline mr-1" /> Palpites
             </button>
             <button onClick={() => setBetSubTab('winners')}
-              className={`flex-1 px-4 py-2.5 text-sm font-semibold text-center transition-colors ${
-                betSubTab === 'winners' ? 'bg-yellow-400 text-emerald-900' : 'text-green-200 hover:bg-emerald-800/50'}`}>
+              className={`flex-1 px-4 py-3 text-sm font-semibold text-center transition-all duration-200 ${
+                betSubTab === 'winners' ? 'bg-yellow-400 text-emerald-900 shadow-inner' : 'text-green-200 hover:bg-emerald-800/50'}`}>
               <Award className="h-4 w-4 inline mr-1" /> Ganhadores
             </button>
           </div>
@@ -1132,35 +1271,33 @@ function HomeContent() {
           {betSubTab === 'winners' && (
             <div className="space-y-3">
               {PHASES_FOR_WINNERS.map(phase => (
-                <Card key={phase.key} className="overflow-hidden">
-                  <div className="bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2">
+                <Card key={phase.key} className="overflow-hidden shadow-md hover:shadow-lg transition-shadow">
+                  <div className="bg-gradient-to-r from-emerald-600 to-green-600 text-white px-4 py-2.5">
                     <span className="font-bold text-sm">{phase.label}</span>
                   </div>
                   <CardContent className="p-0 divide-y divide-gray-100">
                     {WINNER_POSITIONS.map(pos => {
                       const winnerKey = `${phase.key}${pos.suffix}`;
-                      const winner = phaseWinners.get(winnerKey);
+                      const winnerData = phaseWinners.get(winnerKey);
+                      const winnerName = winnerData?.winnerName;
                       return (
                         <div key={winnerKey}
-                          className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
-                          onClick={() => {
-                            setWinnerModal({ phase: winnerKey, winnerName: winner || null });
-                            if (winner) playAudio('/winner.mp3');
-                            else playAudio('/no_winner_to_show.mp3');
-                          }}>
+                          className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-emerald-50/50 transition-colors group"
+                          onClick={() => handleWinnerRowClick(winnerKey)}>
                           <div className="flex items-center gap-3">
-                            <span className="text-lg">{pos.emoji}</span>
+                            <span className="text-lg group-hover:scale-110 transition-transform">{pos.emoji}</span>
                             <div>
                               <p className="font-semibold text-sm text-gray-800">{pos.label}</p>
-                              {winner ? (
-                                <p className="text-xs text-emerald-600 font-medium">{winner}</p>
+                              {winnerName ? (
+                                <p className="text-xs text-emerald-600 font-medium">{winnerName}</p>
                               ) : (
                                 <p className="text-xs text-gray-400">Ainda não definido</p>
                               )}
                             </div>
                           </div>
-                          <Badge variant={winner ? 'default' : 'secondary'} className={winner ? 'bg-emerald-600' : ''}>
-                            {winner ? 'Ver' : '???'}
+                          <Badge variant={winnerName ? 'default' : 'secondary'}
+                            className={`${winnerName ? 'bg-emerald-600 hover:bg-emerald-700' : ''} transition-colors`}>
+                            {winnerName ? 'Ver' : '???'}
                           </Badge>
                         </div>
                       );
@@ -1175,16 +1312,16 @@ function HomeContent() {
           {betSubTab === 'bets' && (
             <>
               {/* Phase tabs */}
-              <div className="bg-emerald-800/90 rounded-lg shadow-md p-2">
+              <div className="bg-emerald-800/90 rounded-xl shadow-lg p-2">
                 <div className="flex overflow-x-auto scrollbar-hide gap-1">
                   {PHASES.map(phase => {
                     const hasMatches = phase.key === 'groups' || (phaseMatches.has(phase.key) && (phaseMatches.get(phase.key)?.length || 0) > 0);
                     const isActive = activePhase === phase.key;
                     return (
                       <button key={phase.key} onClick={() => handlePhaseTabClick(phase.key)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                          isActive ? 'bg-yellow-400 text-emerald-900 shadow-md'
-                            : hasMatches ? 'bg-emerald-700/50 text-green-100 hover:bg-emerald-600/50'
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-all duration-200 ${
+                          isActive ? 'bg-yellow-400 text-emerald-900 shadow-md scale-105'
+                            : hasMatches ? 'bg-emerald-700/50 text-green-100 hover:bg-emerald-600/50 hover:shadow-sm'
                               : 'bg-emerald-900/30 text-green-300/40 hover:bg-emerald-800/30 hover:text-green-200/60'}`}>
                         {phase.label}
                         {hasMatches && phase.key !== 'groups' && (
@@ -1197,7 +1334,7 @@ function HomeContent() {
               </div>
 
               {/* Instructions card */}
-              <Card className="border-blue-200 bg-blue-50/50">
+              <Card className="border-blue-200 bg-blue-50/50 shadow-sm">
                 <CardContent className="py-3">
                   <p className="text-sm text-blue-800">
                     <strong>Instruções:</strong> Preencha o placar de cada jogo com números inteiros (0 a 30).
@@ -1218,9 +1355,9 @@ function HomeContent() {
                     }).length;
 
                     return (
-                      <Card key={round} className="overflow-hidden">
+                      <Card key={round} className="overflow-hidden shadow-md hover:shadow-lg transition-shadow">
                         <button onClick={() => toggleRound(round)}
-                          className="w-full text-left bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-4 flex items-center justify-between hover:from-emerald-700 hover:to-green-700 transition-colors">
+                          className="w-full text-left bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-4 flex items-center justify-between hover:from-emerald-700 hover:to-green-700 transition-all duration-200">
                           <div className="flex items-center gap-3">
                             <Badge variant="secondary" className="bg-yellow-300 text-emerald-900 font-bold">{ROUND_LABELS[round]}</Badge>
                             <span className="text-sm text-green-100">{roundFilled}/{roundMatches.length} palpites</span>
@@ -1229,34 +1366,42 @@ function HomeContent() {
                         </button>
                         {isExpanded && (
                           <CardContent className="p-0 divide-y divide-gray-100">
-                            {roundMatches.map(match => renderMatchRow(match))}
+                            {roundMatches.length === 0 ? (
+                              <div className="py-6 text-center text-gray-400 text-sm">
+                                Essa fase ainda é um mistério... 🔮
+                              </div>
+                            ) : (
+                              roundMatches.map(match => renderMatchRow(match))
+                            )}
                           </CardContent>
                         )}
                       </Card>
                     );
                   })}
 
-                  {/* Ver Ganhador button for GROUPS phase too */}
                   <Button onClick={() => handleViewWinner('groups')}
                     variant="outline"
-                    className="w-full h-12 text-base font-bold border-yellow-400 text-yellow-700 hover:bg-yellow-50 bg-yellow-50/50">
+                    className="w-full h-12 text-base font-bold border-yellow-400 text-yellow-700 hover:bg-yellow-50 bg-yellow-50/50 shadow-md hover:shadow-lg transition-all">
                     <Star className="h-5 w-5 mr-2" /> Ver Ganhador da 1ª Fase
                   </Button>
                 </>
               ) : (
                 <>
                   {phaseLoading ? (
-                    <div className="flex justify-center py-12">
-                      <Loader2 className="h-8 w-8 animate-spin text-green-600" />
+                    <div className="flex flex-col justify-center py-12 items-center gap-3">
+                      <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+                      <p className="text-gray-500 text-sm">{pickRandom(FUNNY_LOADING_MESSAGES)}</p>
                     </div>
                   ) : currentPhaseMatches.length === 0 ? (
-                    <Card className="border-gray-200">
+                    <Card className="border-gray-200 shadow-md">
                       <CardContent className="py-8 text-center text-gray-500">
-                        Nenhum jogo configurado para esta fase ainda. Aguarde o administrador configurar os confrontos.
+                        <p className="text-4xl mb-3">🔮</p>
+                        <p className="font-medium">Essa fase ainda é um mistério...</p>
+                        <p className="text-sm text-gray-400 mt-1">Aguarde o administrador configurar os confrontos.</p>
                       </CardContent>
                     </Card>
                   ) : (
-                    <Card className="overflow-hidden">
+                    <Card className="overflow-hidden shadow-md">
                       <div className="bg-gradient-to-r from-emerald-600 to-green-600 text-white px-6 py-4">
                         <Badge variant="secondary" className="bg-yellow-300 text-emerald-900 font-bold">
                           {PHASES.find(p => p.key === activePhase)?.label || activePhase}
@@ -1268,10 +1413,9 @@ function HomeContent() {
                     </Card>
                   )}
 
-                  {/* Ver Ganhador button for knockout phases */}
                   <Button onClick={() => handleViewWinner(activePhase)}
                     variant="outline"
-                    className="w-full h-12 text-base font-bold border-yellow-400 text-yellow-700 hover:bg-yellow-50 bg-yellow-50/50">
+                    className="w-full h-12 text-base font-bold border-yellow-400 text-yellow-700 hover:bg-yellow-50 bg-yellow-50/50 shadow-md hover:shadow-lg transition-all">
                     <Star className="h-5 w-5 mr-2" /> Ver Ganhador
                   </Button>
                 </>
@@ -1280,10 +1424,10 @@ function HomeContent() {
               {/* Save button */}
               <div className="sticky bottom-4 z-10">
                 <Button onClick={handleSave} disabled={loading}
-                  className="w-full h-14 text-lg font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xl rounded-xl">
+                  className="w-full h-14 text-lg font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xl rounded-xl transition-all hover:shadow-emerald-600/30 hover:scale-[1.02] active:scale-[0.98]">
                   {loading ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Save className="h-5 w-5 mr-2" />}
                   Salvar Palpites
-                  {hasChanges && <span className="ml-2 text-yellow-200">●</span>}
+                  {hasChanges && <span className="ml-2 text-yellow-200 animate-pulse">●</span>}
                 </Button>
               </div>
             </>
@@ -1312,9 +1456,14 @@ function HomeContent() {
             <div className="py-6 text-center">
               {winnerModal?.winnerName ? (
                 <div className="space-y-4">
-                  <div className="text-5xl font-black text-emerald-700 animate-bounce">🏆</div>
+                  <div className="text-6xl font-black text-emerald-700 animate-bounce">🏆</div>
                   <p className="text-2xl font-bold text-emerald-800">{winnerModal.winnerName}</p>
-                  <p className="text-sm text-gray-500">Parabéns ao ganhador!</p>
+                  <p className="text-sm text-gray-500">Parabéns ao ganhador! 🎉</p>
+                  {winnerModal.audioSrc && (
+                    <div className="flex items-center justify-center gap-1 text-xs text-gray-400">
+                      <Music className="h-3 w-3" /> Áudio personalizado
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1327,13 +1476,15 @@ function HomeContent() {
               )}
             </div>
             <div className="flex justify-center">
-              <Button onClick={() => setWinnerModal(null)} className="bg-emerald-600 hover:bg-emerald-700">Fechar</Button>
+              <Button onClick={() => setWinnerModal(null)} className="bg-emerald-600 hover:bg-emerald-700 shadow-md transition-all">
+                Fechar
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
 
         <footer className="bg-gray-50 border-t py-4 text-center text-sm text-gray-500 mt-4">
-          Bolão Copa do Mundo 2026 — {player.name}
+          Bolão Copa do Mundo 2026 — {player.name} ⚽
         </footer>
       </div>
     );
@@ -1342,9 +1493,10 @@ function HomeContent() {
   // Render admin panel
   const renderAdmin = () => (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-yellow-50 flex flex-col">
-      <header className="bg-gradient-to-r from-amber-700 via-yellow-600 to-amber-700 text-white shadow-lg">
-        <div className="max-w-6xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between">
+      <header className="relative bg-gradient-to-r from-amber-800 via-yellow-600 to-amber-800 text-white shadow-xl overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_50%,rgba(255,255,255,0.08),transparent_50%)]" />
+        <div className="relative max-w-6xl mx-auto px-4 py-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-3">
               <Shield className="h-8 w-8 text-yellow-300" />
               <div>
@@ -1355,17 +1507,17 @@ function HomeContent() {
             {isAdminAuth && (
               <div className="flex items-center gap-3 flex-wrap">
                 <Button variant="outline" onClick={handleReorder} disabled={reorderLoading}
-                  className="bg-white/10 border-white/30 text-white hover:bg-white/20">
+                  className="bg-white/10 border-white/30 text-white hover:bg-white/20 backdrop-blur-sm transition-all">
                   {reorderLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <AlertTriangle className="h-4 w-4 mr-2" />}
                   Reordenar Jogos
                 </Button>
                 <Button variant="outline" onClick={handleExport}
-                  className="bg-white/10 border-white/30 text-white hover:bg-white/20">
+                  className="bg-white/10 border-white/30 text-white hover:bg-white/20 backdrop-blur-sm transition-all">
                   <Download className="h-4 w-4 mr-2" /> Exportar CSV
                 </Button>
                 <Button variant="outline"
                   onClick={() => { setIsAdminAuth(false); setAdminPassword(''); window.location.href = '/'; }}
-                  className="bg-white/10 border-white/30 text-white hover:bg-white/20">
+                  className="bg-white/10 border-white/30 text-white hover:bg-white/20 backdrop-blur-sm transition-all">
                   Sair
                 </Button>
               </div>
@@ -1376,10 +1528,10 @@ function HomeContent() {
 
       <main className="flex-1 max-w-6xl mx-auto w-full px-4 py-6 space-y-6">
         {!isAdminAuth ? (
-          <Card className="max-w-md mx-auto mt-12">
+          <Card className="max-w-md mx-auto mt-12 shadow-lg">
             <CardHeader className="text-center">
               <Shield className="h-12 w-12 text-amber-600 mx-auto mb-2" />
-              <CardTitle>Acesso Restrito</CardTitle>
+              <CardTitle className="text-xl">Acesso Restrito</CardTitle>
               <CardDescription>Digite a senha de administrador para continuar</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1387,10 +1539,10 @@ function HomeContent() {
                 <Label htmlFor="admin-pass-page">Senha</Label>
                 <Input id="admin-pass-page" type="password" placeholder="Senha do administrador"
                   value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()} className="text-base mt-1" />
+                  onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()} className="text-base mt-1 h-12" />
               </div>
               <Button onClick={handleAdminLogin} disabled={loading || !adminPassword}
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white">
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white h-12 shadow-md transition-all">
                 {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null} Entrar
               </Button>
             </CardContent>
@@ -1400,18 +1552,18 @@ function HomeContent() {
             {/* Admin tabs */}
             <div className="flex gap-2 overflow-x-auto pb-2">
               <button onClick={() => setAdminTab('bets')}
-                className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-                  adminTab === 'bets' ? 'bg-amber-600 text-white shadow-md' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'}`}>
+                className={`px-4 py-2.5 rounded-xl font-medium text-sm whitespace-nowrap transition-all duration-200 shadow-sm ${
+                  adminTab === 'bets' ? 'bg-amber-600 text-white shadow-md scale-105' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50 hover:shadow-md'}`}>
                 <Users className="h-4 w-4 inline mr-1" /> Palpites
               </button>
               <button onClick={() => { setAdminTab('phases'); loadAdminPhaseConfig(adminPhaseConfig); }}
-                className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-                  adminTab === 'phases' ? 'bg-amber-600 text-white shadow-md' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'}`}>
+                className={`px-4 py-2.5 rounded-xl font-medium text-sm whitespace-nowrap transition-all duration-200 shadow-sm ${
+                  adminTab === 'phases' ? 'bg-amber-600 text-white shadow-md scale-105' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50 hover:shadow-md'}`}>
                 <Settings className="h-4 w-4 inline mr-1" /> Configurar Fases
               </button>
               <button onClick={() => { setAdminTab('winners'); loadAdminPhaseWinners(); }}
-                className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-                  adminTab === 'winners' ? 'bg-amber-600 text-white shadow-md' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50'}`}>
+                className={`px-4 py-2.5 rounded-xl font-medium text-sm whitespace-nowrap transition-all duration-200 shadow-sm ${
+                  adminTab === 'winners' ? 'bg-amber-600 text-white shadow-md scale-105' : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-50 hover:shadow-md'}`}>
                 <Award className="h-4 w-4 inline mr-1" /> Ganhadores
               </button>
             </div>
@@ -1420,23 +1572,23 @@ function HomeContent() {
             {adminTab === 'bets' && (
               <>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Card><CardContent className="pt-6 text-center">
+                  <Card className="shadow-md hover:shadow-lg transition-shadow"><CardContent className="pt-6 text-center">
                     <p className="text-3xl font-bold text-amber-700">{adminData.length}</p>
                     <p className="text-sm text-gray-500">Participantes</p>
                   </CardContent></Card>
-                  <Card><CardContent className="pt-6 text-center">
+                  <Card className="shadow-md hover:shadow-lg transition-shadow"><CardContent className="pt-6 text-center">
                     <p className="text-3xl font-bold text-green-700">
                       {adminData.reduce((acc, p) => acc + p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length, 0)}
                     </p>
                     <p className="text-sm text-gray-500">Palpites totais</p>
                   </CardContent></Card>
-                  <Card><CardContent className="pt-6 text-center">
+                  <Card className="shadow-md hover:shadow-lg transition-shadow"><CardContent className="pt-6 text-center">
                     <p className="text-3xl font-bold text-blue-700">
                       {adminData.filter(p => p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length > 0).length}
                     </p>
                     <p className="text-sm text-gray-500">Com palpites</p>
                   </CardContent></Card>
-                  <Card><CardContent className="pt-6 text-center">
+                  <Card className="shadow-md hover:shadow-lg transition-shadow"><CardContent className="pt-6 text-center">
                     <p className="text-3xl font-bold text-red-700">
                       {adminData.filter(p => p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length === 0).length}
                     </p>
@@ -1444,7 +1596,7 @@ function HomeContent() {
                   </CardContent></Card>
                 </div>
 
-                <Card>
+                <Card className="shadow-md">
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5" /> Palpites dos Participantes</CardTitle>
@@ -1455,7 +1607,10 @@ function HomeContent() {
                     <ScrollArea className="max-h-[600px]">
                       <div className="divide-y">
                         {adminData.length === 0 ? (
-                          <div className="p-8 text-center text-gray-500">Nenhum participante registrado ainda.</div>
+                          <div className="p-8 text-center text-gray-500">
+                            <p className="text-3xl mb-2">🤷</p>
+                            Nenhum participante registrado ainda.
+                          </div>
                         ) : (
                           adminData.map((p: any) => {
                             const betCount = p.bets.filter((b: any) => b.homeScore !== null || b.awayScore !== null).length;
@@ -1491,7 +1646,7 @@ function HomeContent() {
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <Badge variant="secondary">{betCount > 0 ? `${betCount} palpites` : 'Sem palpites'}</Badge>
-                                    <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                                    <Button variant="outline" size="sm" className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300 transition-all"
                                       onClick={() => setDeleteTarget({ id: p.id, name: p.name, betCount })}>
                                       <Trash2 className="h-4 w-4" />
                                     </Button>
@@ -1503,7 +1658,7 @@ function HomeContent() {
                                       <p className="text-xs font-semibold text-gray-500 mb-1">{ROUND_LABELS[round]}</p>
                                       <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-1">
                                         {betsByRound[round - 1].map((bet: any) => (
-                                          <div key={bet.id} className="bg-gray-50 rounded p-1.5 text-center text-xs">
+                                          <div key={bet.id} className="bg-gray-50 rounded p-1.5 text-center text-xs hover:bg-gray-100 transition-colors">
                                             <div className="text-[10px] text-gray-400 truncate">{bet.match.homeTeam} v {bet.match.awayTeam}</div>
                                             <div className="font-bold text-gray-800">
                                               {bet.homeScore !== null && bet.awayScore !== null ? `${bet.homeScore}×${bet.awayScore}` : '—'}
@@ -1518,13 +1673,12 @@ function HomeContent() {
                                       </div>
                                     </div>
                                   ))}
-                                  {/* Knockout phase bets */}
                                   {betsByPhase.map(group => (
                                     <div key={group.key}>
                                       <p className="text-xs font-semibold text-amber-700 mb-1">{group.label}</p>
                                       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-1">
                                         {group.bets.map((bet: any) => (
-                                          <div key={bet.id} className="bg-amber-50 rounded p-1.5 text-center text-xs">
+                                          <div key={bet.id} className="bg-amber-50 rounded p-1.5 text-center text-xs hover:bg-amber-100 transition-colors">
                                             <div className="text-[10px] text-gray-400 truncate">{bet.match.homeTeam} v {bet.match.awayTeam}</div>
                                             <div className="font-bold text-gray-800">
                                               {bet.homeScore !== null && bet.awayScore !== null ? `${bet.homeScore}×${bet.awayScore}` : '—'}
@@ -1553,7 +1707,7 @@ function HomeContent() {
 
             {/* Configure Phases tab */}
             {adminTab === 'phases' && (
-              <Card>
+              <Card className="shadow-md">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> Configurar Fases Eliminatórias</CardTitle>
                   <CardDescription>Selecione os times para cada jogo das fases eliminatórias</CardDescription>
@@ -1562,7 +1716,7 @@ function HomeContent() {
                   <div>
                     <Label>Fase</Label>
                     <select value={adminPhaseConfig} onChange={(e) => loadAdminPhaseConfig(e.target.value)}
-                      className="w-full mt-1 p-2 border rounded-lg bg-white text-sm">
+                      className="w-full mt-1 p-2.5 border rounded-xl bg-white text-sm shadow-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all">
                       {KNOCKOUT_PHASES.map(phase => (
                         <option key={phase.key} value={phase.key}>
                           {phase.label} ({phase.matchCount} jogos, {phase.matchSlots} times)
@@ -1573,11 +1727,11 @@ function HomeContent() {
 
                   <div className="space-y-3">
                     {adminPhaseMatches.map((match, idx) => (
-                      <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100/70 transition-colors">
                         <span className="text-sm font-bold text-gray-500 w-8 shrink-0">J{idx + 1}</span>
                         <button onClick={() => openTeamPicker(idx, 'home')}
-                          className={`flex-1 p-2 rounded border text-left text-sm transition-colors ${
-                            match.homeTeam ? 'bg-white border-green-300 hover:border-green-400'
+                          className={`flex-1 p-2.5 rounded-lg border text-left text-sm transition-all duration-200 ${
+                            match.homeTeam ? 'bg-white border-green-300 hover:border-green-400 hover:shadow-sm'
                               : 'bg-gray-100 border-dashed border-gray-300 hover:border-gray-400'}`}>
                           {match.homeTeam ? (
                             <span><span className="font-bold">{match.homeTeam}</span><span className="text-gray-500 ml-1">({match.homeName})</span></span>
@@ -1587,8 +1741,8 @@ function HomeContent() {
                         </button>
                         <span className="text-gray-400 font-bold">×</span>
                         <button onClick={() => openTeamPicker(idx, 'away')}
-                          className={`flex-1 p-2 rounded border text-left text-sm transition-colors ${
-                            match.awayTeam ? 'bg-white border-green-300 hover:border-green-400'
+                          className={`flex-1 p-2.5 rounded-lg border text-left text-sm transition-all duration-200 ${
+                            match.awayTeam ? 'bg-white border-green-300 hover:border-green-400 hover:shadow-sm'
                               : 'bg-gray-100 border-dashed border-gray-300 hover:border-gray-400'}`}>
                           {match.awayTeam ? (
                             <span><span className="font-bold">{match.awayTeam}</span><span className="text-gray-500 ml-1">({match.awayName})</span></span>
@@ -1601,7 +1755,7 @@ function HomeContent() {
                   </div>
 
                   <Button onClick={savePhaseConfig} disabled={adminPhaseSaving}
-                    className="w-full bg-amber-600 hover:bg-amber-700 text-white">
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white h-12 shadow-md hover:shadow-lg transition-all">
                     {adminPhaseSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                     Salvar Configuração da Fase
                   </Button>
@@ -1609,9 +1763,9 @@ function HomeContent() {
               </Card>
             )}
 
-            {/* Winners tab — restructured: 1º/2º/3º per phase + delete button */}
+            {/* Winners tab — with audio selection */}
             {adminTab === 'winners' && (
-              <Card>
+              <Card className="shadow-md">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2"><Award className="h-5 w-5" /> Ganhadores</CardTitle>
                   <CardDescription>Defina o 1º, 2º e 3º lugar de cada fase. Clique no ✕ para remover um ganhador.</CardDescription>
@@ -1622,22 +1776,55 @@ function HomeContent() {
                       <h4 className="font-semibold text-sm text-amber-800 border-b border-amber-200 pb-1">{phase.label}</h4>
                       {WINNER_POSITIONS.map(pos => {
                         const winnerKey = `${phase.key}${pos.suffix}`;
-                        const currentValue = adminPhaseWinners.get(winnerKey) || '';
+                        const currentData = adminPhaseWinners.get(winnerKey) || { winnerName: '', audioSrc: null as string | null };
                         return (
-                          <div key={winnerKey} className="flex items-center gap-2">
+                          <div key={winnerKey} className="flex items-center gap-2 flex-wrap">
                             <span className="text-lg w-6 text-center shrink-0">{pos.emoji}</span>
                             <Label className="w-20 shrink-0 text-xs font-medium">{pos.label}</Label>
-                            <div className="flex-1 flex items-center gap-2">
+                            <div className="flex-1 flex items-center gap-2 min-w-0">
                               <Input
                                 placeholder="Nome do ganhador"
-                                value={currentValue}
-                                onChange={(e) => setAdminPhaseWinners(prev => new Map(prev).set(winnerKey, e.target.value))}
-                                className="flex-1 text-sm"
+                                value={currentData.winnerName}
+                                onChange={(e) => setAdminPhaseWinners(prev => {
+                                  const newMap = new Map(prev);
+                                  newMap.set(winnerKey, { ...currentData, winnerName: e.target.value });
+                                  return newMap;
+                                })}
+                                className="flex-1 text-sm min-w-[120px]"
                               />
-                              {currentValue && (
+                              {/* Audio selector */}
+                              <Select
+                                value={currentData.audioSrc || '__none__'}
+                                onValueChange={(val) => setAdminPhaseWinners(prev => {
+                                  const newMap = new Map(prev);
+                                  newMap.set(winnerKey, { ...currentData, audioSrc: val === '__none__' ? null : val });
+                                  return newMap;
+                                })}
+                              >
+                                <SelectTrigger className="w-[140px] text-xs" size="sm">
+                                  <Music className="h-3 w-3 mr-1 text-amber-500" />
+                                  <SelectValue placeholder="Áudio" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">Padrão</SelectItem>
+                                  {audioFiles.map((audioName) => {
+                                    const fullPath = `/win/${audioName}.mp3`;
+                                    const displayName = audioName.replace(/\.mp3$/, '');
+                                    return (
+                                      <SelectItem key={audioName} value={fullPath}>
+                                        <div className="flex items-center gap-1.5">
+                                          <Volume2 className="h-3 w-3" />
+                                          {displayName}
+                                        </div>
+                                      </SelectItem>
+                                    );
+                                  })}
+                                </SelectContent>
+                              </Select>
+                              {currentData.winnerName && (
                                 <Button variant="ghost" size="sm"
                                   onClick={() => deleteWinner(winnerKey)}
-                                  className="text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
+                                  className="text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0 transition-all"
                                   title="Remover este ganhador">
                                   <X className="h-4 w-4" />
                                 </Button>
@@ -1650,7 +1837,7 @@ function HomeContent() {
                   ))}
 
                   <Button onClick={savePhaseWinners} disabled={adminWinnerSaving}
-                    className="w-full bg-amber-600 hover:bg-amber-700 text-white">
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white h-12 shadow-md hover:shadow-lg transition-all">
                     {adminWinnerSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                     Salvar Ganhadores
                   </Button>
@@ -1679,7 +1866,7 @@ function HomeContent() {
                 return team.abbr.toLowerCase().includes(q) || team.name.toLowerCase().includes(q);
               }).map(team => (
                 <button key={team.abbr} onClick={() => selectTeam(team)}
-                  className="p-2 rounded-lg border border-gray-200 hover:border-green-400 hover:bg-green-50 text-left transition-colors">
+                  className="p-2 rounded-lg border border-gray-200 hover:border-emerald-400 hover:bg-emerald-50 hover:shadow-sm text-left transition-all duration-200">
                   <div className="font-bold text-sm">{team.abbr}</div>
                   <div className="text-xs text-gray-500 truncate">{team.name}</div>
                 </button>
@@ -1699,14 +1886,14 @@ function HomeContent() {
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <p>Tem certeza que deseja deletar <strong>{deleteTarget?.name}</strong> e todos os seus <strong>{deleteTarget?.betCount} palpites</strong>?</p>
-                <p className="text-red-600 font-medium">Esta ação não pode ser desfeita.</p>
+                <p className="text-red-600 font-medium">Essa não volta como substituição! ⚠️</p>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeletePlayer} disabled={deleting}
-              className="bg-red-600 hover:bg-red-700 text-white">
+              className="bg-red-600 hover:bg-red-700 text-white transition-all">
               {deleting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
               {deleting ? 'Deletando...' : 'Deletar participante'}
             </AlertDialogAction>
@@ -1723,10 +1910,18 @@ function HomeContent() {
   // Main render
   if (initialLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-green-50">
-        <div className="text-center">
-          <Loader2 className="h-10 w-10 animate-spin text-green-600 mx-auto" />
-          <p className="mt-4 text-gray-600">Carregando jogos...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-green-50">
+        <div className="text-center space-y-4">
+          <div className="relative">
+            <Loader2 className="h-12 w-12 animate-spin text-emerald-600 mx-auto" />
+            <Trophy className="h-6 w-6 text-yellow-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+          </div>
+          <p className="text-gray-600 font-medium">{loadingMessage}</p>
+          <div className="flex justify-center gap-1">
+            <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-2 h-2 bg-emerald-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
         </div>
       </div>
     );
@@ -1742,10 +1937,10 @@ function HomeContent() {
 export default function Home() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-white to-green-50">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground text-sm">Carregando...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+          <p className="text-gray-500 text-sm">Carregando...</p>
         </div>
       </div>
     }>

@@ -73,6 +73,11 @@ async function runMigration() {
     await directClient.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Match_phase_idx" ON "Match"("phase");`);
     await directClient.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "Match_phase_matchNum_idx" ON "Match"("phase", "matchNum");`);
 
+    // Add audioSrc column to PhaseWinner if missing
+    await directClient.$executeRawUnsafe(
+      `ALTER TABLE "PhaseWinner" ADD COLUMN IF NOT EXISTS "audioSrc" TEXT;`
+    );
+
     await directClient.$disconnect();
 
     (globalThis as any)[MIGRATION_KEY] = true;
