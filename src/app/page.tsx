@@ -201,13 +201,15 @@ const playAudio = (src: string) => {
       audioRef.current.currentTime = 0;
       audioRef.current = null;
     }
-    const audio = new Audio(src);
+    // Use encodeURI to handle special characters (accents, etc.) in filenames
+    const audio = new Audio(encodeURI(src));
     audioRef.current = audio;
     audio.play().catch(() => {});
   } catch {}
 };
 
 // Resolve audio source path from a base name or full path
+// Always returns a path that will be encodeURI'd by playAudio
 const resolveAudioSrc = (audioSrc: string | null): string => {
   if (!audioSrc) return '/winner.mp3';
   // If it's already a full path (starts with /), use as-is for backward compat
@@ -228,6 +230,14 @@ const normalizeAudioSrc = (audioSrc: string | null): string | null => {
   if (rootMatch) return rootMatch[1];
   // Otherwise return as-is (already a base name)
   return audioSrc;
+};
+
+// ========== Easter Egg Audio Constants ==========
+// Specific audio files for each easter egg
+const EASTER_EGG_AUDIO = {
+  konami: '/win/a_lapada_é_forte.mp3',
+  trophy: '/win/soviet.mp3',
+  party: '/win/ilari_ilari_ilariê.mp3',
 };
 
 // Generate a World Cup themed gradient for team badges
@@ -473,7 +483,7 @@ function HomeContent() {
       if (seq.length === KONAMI_CODE.length && seq.every((k, i) => k === KONAMI_CODE[i])) {
         konamiRef.current = [];
         setKonamiActivated(true);
-        playAudio('/winner.mp3');
+        playAudio(EASTER_EGG_AUDIO.konami);
         // Auto-dismiss after 8 seconds
         setTimeout(() => {
           setKonamiActivated(false);
@@ -490,7 +500,7 @@ function HomeContent() {
     setTrophyClickCount(newCount);
     if (newCount >= 7) {
       setShowTrophySecret(true);
-      playAudio('/winner.mp3');
+      playAudio(EASTER_EGG_AUDIO.trophy);
       toast({
         title: '🏆 Segredo desbloqueado!',
         description: pickRandom([
@@ -512,7 +522,7 @@ function HomeContent() {
         title: '🎉 Modo Festa ATIVADO!',
         description: 'Samba de jogador ninguém segura! 🕺💃',
       });
-      playAudio('/winner.mp3');
+      playAudio(EASTER_EGG_AUDIO.party);
       // Auto-disable after 10 seconds
       setTimeout(() => setPartyMode(false), 10000);
     }
@@ -1997,41 +2007,33 @@ function HomeContent() {
                                 })}
                                 className="flex-1 text-sm min-w-[120px]"
                               />
-                              {/* Audio selector */}
-                              <Select
-                                value={currentData.audioSrc || '__none__'}
-                                onValueChange={(val) => {
-                                  setAdminPhaseWinners(prev => {
-                                    const newMap = new Map(prev);
-                                    const existing = prev.get(winnerKey) || { winnerName: '', audioSrc: null as string | null };
-                                    newMap.set(winnerKey, { ...existing, audioSrc: val === '__none__' ? null : val });
-                                    return newMap;
-                                  });
-                                  // Preview the audio when selecting
-                                  if (val !== '__none__') {
-                                    playAudio(`/win/${val}.mp3`);
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="w-[140px] text-xs" size="sm">
-                                  <Music className="h-3 w-3 mr-1 text-amber-500" />
-                                  <SelectValue placeholder="Áudio" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="__none__">Padrão (winner.mp3)</SelectItem>
-                                  {audioFiles.map((audioName) => {
-                                    const displayName = audioName.replace(/\.mp3$/, '');
-                                    return (
-                                      <SelectItem key={audioName} value={audioName}>
-                                        <div className="flex items-center gap-1.5">
-                                          <Volume2 className="h-3 w-3" />
-                                          {displayName}
-                                        </div>
-                                      </SelectItem>
-                                    );
-                                  })}
-                                </SelectContent>
-                              </Select>
+                              {/* Audio selector - using native select for reliable special character support */}
+                              <div className="relative">
+                                <select
+                                  value={currentData.audioSrc || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value || null;
+                                    setAdminPhaseWinners(prev => {
+                                      const newMap = new Map(prev);
+                                      const existing = prev.get(winnerKey) || { winnerName: '', audioSrc: null as string | null };
+                                      newMap.set(winnerKey, { ...existing, audioSrc: val });
+                                      return newMap;
+                                    });
+                                    // Preview the audio when selecting
+                                    if (val) {
+                                      playAudio(resolveAudioSrc(val));
+                                    }
+                                  }}
+                                  className="h-8 pl-7 pr-8 rounded-md border border-amber-200 bg-white text-xs text-amber-800 appearance-none cursor-pointer hover:border-amber-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors w-[160px] truncate"
+                                >
+                                  <option value="">Padrão (winner.mp3)</option>
+                                  {audioFiles.map((audioName) => (
+                                    <option key={audioName} value={audioName}>{audioName}</option>
+                                  ))}
+                                </select>
+                                <Music className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-amber-500 pointer-events-none" />
+                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-amber-400 pointer-events-none" />
+                              </div>
                               {currentData.winnerName && (
                                 <Button variant="ghost" size="sm"
                                   onClick={() => deleteWinner(winnerKey)}
