@@ -59,6 +59,7 @@ model PhaseWinner {
   id         String   @id @default(cuid())
   phase      String   @unique  // "groups", "segunda_fase", "oitavas", "quartas", "semifinal", "terceiro_lugar", "final", "segundo_lugar", "terceiro_lugar_geral"
   winnerName String
+  audioSrc   String?  // Path to audio file, e.g. "/win/champion.mp3". Null = use default winner.mp3
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
