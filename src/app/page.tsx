@@ -264,7 +264,7 @@ const vineBoomSpam = (imageSrc: string, audioGroup: 'lgn' | 'ppt') => {
     const y = Math.random() * 80 + 10; // 10-90% from top
     const size = Math.random() * 120 + 80; // 80-200px
     const rotation = Math.floor(Math.random() * 60 - 30); // -30 to +30 deg
-    const delay = i * 50; // 50ms stagger
+    const delay = i * 80; // 80ms stagger
     img.className = 'vine-boom-img';
     img.style.cssText = `
       position:absolute;
@@ -282,7 +282,7 @@ const vineBoomSpam = (imageSrc: string, audioGroup: 'lgn' | 'ppt') => {
   }
 
   // Clean up after all animations finish
-  const totalTime = 600 + count * 50 + 200; // animation duration + stagger + buffer
+  const totalTime = 1200 + count * 80 + 400; // animation duration + stagger + buffer
   setTimeout(() => {
     container.remove();
   }, totalTime);
