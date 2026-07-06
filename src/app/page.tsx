@@ -240,6 +240,66 @@ const EASTER_EGG_AUDIO = {
   party: '/win/ilari_ilari_ilariê.mp3',
 };
 
+// ========== Vine Boom Spam Effect ==========
+// Creates a rapid-fire "vine boom" style image spam across the screen
+const VINE_BOOM_AUDIOS = {
+  lgn: ['/lgn_1.mp3', '/lgn_2.mp3', '/lgn_3.mp3'],
+  ppt: ['/ppt_1.mp3', '/ppt_2.mp3', '/ppt_3.mp3'],
+};
+
+const vineBoomSpam = (imageSrc: string, audioGroup: 'lgn' | 'ppt') => {
+  const audios = VINE_BOOM_AUDIOS[audioGroup];
+  const audioSrc = audios[Math.floor(Math.random() * audios.length)];
+  playAudio(audioSrc);
+
+  const container = document.createElement('div');
+  container.style.cssText = 'position:fixed;inset:0;z-index:99999;pointer-events:none;overflow:hidden;';
+  document.body.appendChild(container);
+
+  const count = 15;
+  for (let i = 0; i < count; i++) {
+    const img = document.createElement('img');
+    img.src = imageSrc;
+    const x = Math.random() * 80 + 10; // 10-90% from left
+    const y = Math.random() * 80 + 10; // 10-90% from top
+    const size = Math.random() * 120 + 80; // 80-200px
+    const rotation = Math.floor(Math.random() * 60 - 30); // -30 to +30 deg
+    const delay = i * 50; // 50ms stagger
+    img.className = 'vine-boom-img';
+    img.style.cssText = `
+      position:absolute;
+      left:${x}%;
+      top:${y}%;
+      width:${size}px;
+      height:${size}px;
+      object-fit:cover;
+      border-radius:8px;
+      --vb-rotate:${rotation}deg;
+      animation-delay:${delay}ms;
+      box-shadow:0 4px 20px rgba(0,0,0,0.5);
+    `;
+    container.appendChild(img);
+  }
+
+  // Clean up after all animations finish
+  const totalTime = 600 + count * 50 + 200; // animation duration + stagger + buffer
+  setTimeout(() => {
+    container.remove();
+  }, totalTime);
+};
+
+// Check and mark vine boom as seen for a user (returns true if should show)
+const shouldShowVineBoom = (type: 'lgn' | 'ppt', playerId: string): boolean => {
+  try {
+    const key = `vineboom_${type}_${playerId}`;
+    if (localStorage.getItem(key)) return false;
+    localStorage.setItem(key, '1');
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // Generate a World Cup themed gradient for team badges
 function getTeamColor(abbr: string): string {
   const colors: Record<string, string> = {
@@ -599,6 +659,10 @@ function HomeContent() {
         const data = await res.json();
         setPlayer({ id: data.id, name: data.name, token: data.token });
         setCurrentPage('bet');
+        // Vine boom on first login
+        if (shouldShowVineBoom('lgn', data.id)) {
+          setTimeout(() => vineBoomSpam('/lgn.jpg', 'lgn'), 300);
+        }
         if (data.isNew) {
           toast({ title: 'Bem-vindo ao bolão!', description: `Conta criada com sucesso. Bons palpites, ${data.name}! 🎉` });
         } else {
@@ -657,6 +721,10 @@ function HomeContent() {
 
       if (res.ok) {
         const data = await res.json();
+        // Vine boom on first save
+        if (player && shouldShowVineBoom('ppt', player.id)) {
+          setTimeout(() => vineBoomSpam('/ppt.jpg', 'ppt'), 200);
+        }
         toast({ title: pickRandom(VICTORY_MESSAGES), description: data.message });
         setHasChanges(false);
 
