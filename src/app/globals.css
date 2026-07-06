@@ -208,7 +208,7 @@
 }
 
 .vine-boom-img {
-  animation: vine-boom-pop 1.2s ease-out forwards;
+  animation: vine-boom-pop 1.0s ease-out forwards;
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
