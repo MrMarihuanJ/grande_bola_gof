@@ -1,24 +1,37 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Vercel natively supports Next.js — NÃO usar output: "standalone"
-  // pois conflita com o sistema de build da Vercel.
-
+  output: "standalone",
   typescript: {
     ignoreBuildErrors: true,
   },
-
-  // Nota: "eslint" foi removido pois não é mais suportado no Next.js 16.
-  // O lint é ignorado automaticamente durante o build na Vercel.
-
   reactStrictMode: false,
-
-  // Permite imagens externas usadas no projeto
+  // Permite carregar fotos de jogadores de CDNs externos
   images: {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "z-cdn.chatglm.cn",
+        hostname: "commons.wikimedia.org",
+      },
+      {
+        protocol: "https",
+        hostname: "upload.wikimedia.org",
+      },
+      {
+        protocol: "https",
+        hostname: "ui-avatars.com",
+      },
+      {
+        protocol: "https",
+        hostname: "media.api-sports.io",
+      },
+      {
+        protocol: "https",
+        hostname: "www.thesportsdb.com",
+      },
+      {
+        protocol: "https",
+        hostname: "thesportsdb.com",
       },
     ],
   },
