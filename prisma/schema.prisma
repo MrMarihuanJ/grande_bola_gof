@@ -1,166 +1,65 @@
-// ====================================================================
-// Prisma Schema - Dungeon and Soccer
-// --------------------------------------------------------------------
-// Usa PostgreSQL em todos os ambientes (dev e prod).
-// - DEV: rode um Postgres local OU use um branch "dev" no Neon
-// - PROD: Neon Postgres (connection string em DATABASE_URL)
-// ====================================================================
-
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-// ===== Jogadores do banco local =====
-model Player {
-  id          String   @id @default(cuid())
-  name        String
-  fullName    String
-  position    String   // GK, DF, MF, FW
-  team        String
-  photoUrl    String?
-  nationality String?
-  shirtNumber Int?
-  value       Float?
-  // ===== Sistema de rating estilo FIFA =====
-  overall     Int      @default(75)  // Overall rating 0-99
-  age         Int      @default(25)  // Idade
-  pace        Int      @default(70)  // Velocidade
-  shooting    Int      @default(70)  // Finalização
-  passing     Int      @default(70)  // Passe
-  dribbling   Int      @default(70)  // Drible
-  defending   Int      @default(70)  // Defesa
-  physical    Int      @default(70)  // Físico
-  leagueTier  String   @default("BR1") // Tier da liga: BR1, TOP5, TOP10, TOP20, OTHER (ver player-rating.ts)
-  isRetired   Boolean  @default(false) // true se jogador está aposentado/falecido (Dream Team only)
-  isInactive  Boolean  @default(false) // true se jogador está sem clube/sem atividade recente
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([name])
-  @@index([team])
-  @@index([position])
-  @@index([overall])
-  @@index([isRetired])
-}
-
-// ===== Usuários (login individual) =====
-model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  username     String    @unique
-  passwordHash String
-  displayName  String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  teams        UserTeam[]
-  wins         Int       @default(0)
-  losses       Int       @default(0)
-  draws        Int       @default(0)
-  xp           Int       @default(0)
-  // Relations de amizade
-  friendshipsA   Friendship[]   @relation("FriendA")
-  friendshipsB   Friendship[]   @relation("FriendB")
-  friendRequestsSent     FriendRequest[] @relation("FriendReqFrom")
-  friendRequestsReceived FriendRequest[] @relation("FriendReqTo")
-  // Relations de partidas
-  matchesHome  Match[]   @relation("MatchHome")
-  matchesAway  Match[]   @relation("MatchAway")
-}
-
-// ===== Times salvos por usuário =====
-model UserTeam {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String   @default("Meu Time")
-  formation String
-  starters  String   // JSON serializado
-  reserves  String   // JSON serializado
-  isPrimary Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-// Mantido para compatibilidade com versões anteriores
-model SavedTeam {
-  id        String   @id @default(cuid())
-  name      String
-  formation String
-  starters  String
-  reserves  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-// ===== Amizades =====
-model Friendship {
-  id          String   @id @default(cuid())
-  userAId     String
-  userBId     String
-  status      String   @default("ACCEPTED") // ACCEPTED | PENDING
-  createdAt   DateTime @default(now())
-  userA       User     @relation("FriendA", fields: [userAId], references: [id], onDelete: Cascade)
-  userB       User     @relation("FriendB", fields: [userBId], references: [id], onDelete: Cascade)
-
-  @@unique([userAId, userBId])
-  @@index([userBId])
-}
-
-// ===== Convites de amizade pendentes =====
-model FriendRequest {
-  id         String   @id @default(cuid())
-  fromUserId String
-  toUserId   String
-  status     String   @default("PENDING") // PENDING | ACCEPTED | REJECTED
-  createdAt  DateTime @default(now())
-  fromUser   User     @relation("FriendReqFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
-  toUser     User     @relation("FriendReqTo", fields: [toUserId], references: [id], onDelete: Cascade)
-
-  @@unique([fromUserId, toUserId])
-  @@index([toUserId])
-}
-
-// ===== Partidas RPG =====
 model Match {
-  id           String   @id @default(cuid())
-  // Estado: COIN_FLIP | IN_PROGRESS | FINISHED
-  status       String   @default("COIN_FLIP")
-  // Modo: DREAM_TEAM | WORLD_CUP
-  mode         String   @default("DREAM_TEAM")
-  // "heads" (cara) ou "tails" (coroa)
-  coinResult   String?
-  // ID do usuário que começa com a bola
-  startingUserId String?
-  // IDs dos 2 jogadores
-  homeUserId   String
-  awayUserId   String
-  homeUser     User     @relation("MatchHome", fields: [homeUserId], references: [id], onDelete: Cascade)
-  awayUser     User     @relation("MatchAway", fields: [awayUserId], references: [id], onDelete: Cascade)
-  // Posse atual: HOME | AWAY
-  currentPossession String?
-  // Placar
-  homeScore    Int      @default(0)
-  awayScore    Int      @default(0)
-  // Jogador que ganhou (HOME | AWAY | DRAW)
-  winner       String?
-  // Quantos turnos cada um já jogou
-  turnCount    Int      @default(0)
-  // JSON: events do jogo [{ turn, possession, action, dice, success }]
-  eventsJson   String   @default("[]")
-  // Ratings dos times no início da partida (para histórico)
-  homeTeamRating Int?
-  awayTeamRating Int?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        String   @id @default(cuid())
+  round     Int?              // Para fase de grupos: 1-3. Para eliminatórias: null
+  matchNum  Int               // Número do jogo dentro da rodada/fase
+  phase     String   @default("groups")  // "groups", "segunda_fase", "oitavas", "quartas", "semifinal", "terceiro_lugar", "final"
+  homeTeam  String
+  awayTeam  String
+  homeName  String
+  awayName  String
+  bets      Bet[]
+  createdAt DateTime @default(now())
 
-  @@index([homeUserId])
-  @@index([awayUserId])
+  @@index([round])
+  @@index([round, matchNum])
+  @@index([phase])
+  @@index([phase, matchNum])
+}
+
+model Player {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  token     String   @unique
+  bets      Bet[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([token])
+  @@index([name])
+}
+
+model Bet {
+  id             String   @id @default(cuid())
+  playerId       String
+  matchId        String
+  homeScore      Int?
+  awayScore      Int?
+  penaltyWinner  String?  // "home" or "away" — only for knockout phases when scores are tied
+  player         Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([playerId, matchId])
+  @@index([playerId])
+  @@index([matchId])
+}
+
+model PhaseWinner {
+  id         String   @id @default(cuid())
+  phase      String   @unique  // "groups", "segunda_fase", "oitavas", "quartas", "semifinal", "terceiro_lugar", "final", "segundo_lugar", "terceiro_lugar_geral"
+  winnerName String
+  audioSrc   String?  // Path to audio file, e.g. "/win/champion.mp3". Null = use default winner.mp3
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
