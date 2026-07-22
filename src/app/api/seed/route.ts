@@ -1,47 +1,75 @@
-import { NextResponse } from 'next/server';
-import { db, ensureMigrated } from '@/lib/db';
+// =====================================================================
+// API: /api/seed
+// Popula o banco de dados na primeira execução (deploy na Vercel).
+// Idempotente: se já existem jogadores, não duplica.
+// =====================================================================
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'copa2026admin';
+import { NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { PLAYERS_SEED } from '@/lib/football/players-data'
 
-export async function POST(request: Request) {
+export const dynamic = 'force-dynamic'
+
+export async function POST() {
   try {
-    await ensureMigrated();
-    // Require admin password for seeding
-    const { searchParams } = new URL(request.url);
-    const password = searchParams.get('password');
-
-    if (!password || password !== ADMIN_PASSWORD) {
-      return NextResponse.json({ error: 'Acesso negado. Forneça a senha admin via ?password=xxx' }, { status: 401 });
-    }
-
-    const existing = await db.match.count().catch(() => -1);
-
-    if (existing === -1) {
-      return NextResponse.json({
-        error: 'As tabelas do banco ainda não foram criadas.',
-        hint: 'Execute o comando abaixo localmente com as URLs do seu banco:',
-        commands: [
-          'npm install',
-          'DATABASE_URL="sua_url" DIRECT_URL="sua_url" npx prisma db push',
-          'DATABASE_URL="sua_url" DIRECT_URL="sua_url" npx tsx prisma/seed.ts',
-        ],
-      }, { status: 500 });
-    }
-
+    const existing = await db.player.count()
     if (existing > 0) {
-      return NextResponse.json({ message: `Database already has ${existing} matches`, count: existing });
+      return NextResponse.json({
+        ok: true,
+        message: `Banco já possui ${existing} jogadores. Seed ignorado.`,
+        total: existing,
+      })
     }
 
-    const { MATCHES } = await import('@/lib/seed-data');
-    await db.match.createMany({ data: MATCHES });
+    const batch = PLAYERS_SEED.map((p) =>
+      db.player.create({
+        data: {
+          name: p.name,
+          fullName: p.fullName,
+          position: p.position,
+          team: p.team,
+          photoUrl: p.photoUrl,
+          nationality: p.nationality,
+          shirtNumber: p.shirtNumber ?? null,
+          overall: p.overall,
+          age: p.age,
+          pace: p.pace ?? 70,
+          shooting: p.shooting ?? 70,
+          passing: p.passing ?? 70,
+          dribbling: p.dribbling ?? 70,
+          defending: p.defending ?? 70,
+          physical: p.physical ?? 70,
+          leagueTier: p.leagueTier ?? 'OTHER',
+          isRetired: p.isRetired ?? false,
+          isInactive: p.isInactive ?? false,
+        },
+      }),
+    )
 
-    return NextResponse.json({ message: 'Matches seeded successfully', count: MATCHES.length });
-  } catch (error: any) {
-    console.error('Seed error:', error);
+    await db.$transaction(batch)
+
+    const total = await db.player.count()
     return NextResponse.json({
-      error: 'Failed to seed matches',
-      detail: error.message,
-      hint: 'Verifique se as tabelas foram criadas. Acesse /api/health para diagnóstico.',
-    }, { status: 500 });
+      ok: true,
+      message: `Seed concluído com ${total} jogadores.`,
+      total,
+    })
+  } catch (err) {
+    console.error('[API/seed] erro:', err)
+    return NextResponse.json(
+      { ok: false, error: 'Falha ao semear o banco.', detail: String(err) },
+      { status: 500 },
+    )
+  }
+}
+
+export async function GET() {
+  try {
+    const total = await db.player.count()
+    const retired = await db.player.count({ where: { isRetired: true } })
+    return NextResponse.json({ ok: true, total, retired })
+  } catch (err) {
+    console.error('[API/seed GET] erro:', err)
+    return NextResponse.json({ ok: false, total: 0, error: String(err) }, { status: 500 })
   }
 }
