@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as SonnerToaster } from "@/components/ui/sonner";
-import { ThemeProvider } from "@/components/theme/ThemeProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,36 +14,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Dungeon and Soccer · Monte seu Time dos Sonhos",
-  description:
-    "Dungeon and Soccer: monte seu time de futebol com jogadores do mundo inteiro. Busca em tempo real, formações táticas, gestão de reservas, login de usuários e painel administrativo.",
-  keywords: [
-    "Dungeon and Soccer",
-    "montador de time",
-    "futebol",
-    "escalacao",
-    "jogadores mundiais",
-    "tempo real",
-    "Next.js",
-    "Prisma",
-    "Neon",
-    "Vercel",
-  ],
-  authors: [{ name: "Dungeon and Soccer" }],
+  title: "Bolão Copa do Mundo 2026 — Palpites",
+  description: "Faça seus palpites para os jogos da Copa do Mundo 2026. Bolão online com link individual e privacidade garantida.",
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
-  },
-  openGraph: {
-    title: "Dungeon and Soccer · Monte seu Time dos Sonhos",
-    description:
-      "Monte seu time com jogadores de qualquer liga do mundo. Busca em tempo real e gestão completa de reservas.",
-    siteName: "Dungeon and Soccer",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Dungeon and Soccer",
-    description: "Monte seu time de futebol com jogadores do mundo inteiro.",
   },
 };
 
@@ -57,13 +29,10 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground transition-colors duration-300`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        <ThemeProvider>
-          {children}
-          <Toaster />
-          <SonnerToaster position="top-right" richColors closeButton />
-        </ThemeProvider>
+        {children}
+        <Toaster />
       </body>
     </html>
   );
